@@ -1,0 +1,40 @@
+version: "0.1"
+
+provider:
+  active: ollama
+  ollama:        { endpoint: "http://localhost:11434", model: "qwen2.5-coder:7b" }
+  claude-code:   { model: haiku }
+  codex:         { model: "gpt-5" }
+  gemini-cli:    { model: "gemini-2.5-flash" }
+  anthropic:     { model: "claude-haiku-4-5" }
+  openai:        { model: "gpt-4o-mini" }
+  google:        { model: "gemini-2.5-flash" }
+  openai-compat: { endpoint: "", model: "" }
+
+review:
+  evaluate: diff
+  mode: quick
+  reasoning_effort: medium
+  consensus: 1
+  intent_triggers: false
+  intent_trigger_budget: 50
+  context_window_bytes: auto
+  output_reserve_bytes: 2000
+  walk_file_cap: 10000
+
+enforcement:
+  precommit: soft
+  validate: hard
+
+context_overrides:
+  precommit: { mode: quick, consensus: 1, scope: staged }
+  validate:  { mode: thinking, scope: uncommitted }
+
+rules:
+  enabled_extra: []
+  disabled: []
+
+remote_rules: []
+
+history:
+  log_to_file: true

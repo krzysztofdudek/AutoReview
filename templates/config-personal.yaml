@@ -1,0 +1,7 @@
+# Personal overrides. Gitignored. Override any key from config.yaml.
+# Example: switch to a cloud provider just for your machine.
+#
+# provider:
+#   active: anthropic
+# review:
+#   mode: thinking
