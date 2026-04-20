@@ -1,0 +1,13 @@
+{
+  "name": "autoreview-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec tests/**/*.test.mjs",
+    "test:lib": "node --test --test-reporter=spec tests/lib/*.test.mjs"
+  }
+}
