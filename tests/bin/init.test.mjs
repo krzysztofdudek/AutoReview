@@ -1,0 +1,116 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, mkdir, rm, stat, readFile, chmod } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { run } from '../../scripts/bin/init.mjs';
+
+function capture() {
+  const out = [], err = [];
+  return { stdout: { write: (s) => out.push(s) }, stderr: { write: (s) => err.push(s) }, out: () => out.join(''), err: () => err.join('') };
+}
+
+async function mkRepo() {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-init-'));
+  spawnSync('git', ['init', '-q'], { cwd: dir });
+  spawnSync('git', ['config', 'user.email', 't@t'], { cwd: dir });
+  spawnSync('git', ['config', 'user.name', 't'], { cwd: dir });
+  spawnSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: dir });
+  return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
+}
+
+async function mkPluginRoot() {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-plugin-'));
+  await mkdir(join(dir, 'templates'), { recursive: true });
+  await mkdir(join(dir, 'scripts/lib/providers'), { recursive: true });
+  await mkdir(join(dir, 'scripts/bin'), { recursive: true });
+  // Template files
+  await writeFile(join(dir, 'templates/config-repo.yaml'), 'version: "0.1"\nprovider:\n  active: ollama\n');
+  await writeFile(join(dir, 'templates/config-personal.yaml'), '# personal\n');
+  await writeFile(join(dir, 'templates/config-secrets.yaml'), '# secrets\n');
+  await writeFile(join(dir, 'templates/example-rule.md'), '---\nname: "Example"\ntriggers: \'path:"**"\'\n---\nbody');
+  await writeFile(join(dir, 'templates/precommit-hook.sh'), '#!/usr/bin/env sh\nexec node "$(git rev-parse --show-toplevel)/.autoreview/runtime/bin/validate.mjs" --scope staged --context precommit "$@"\n');
+  // Minimal scripts/lib + bin to copy into runtime
+  await writeFile(join(dir, 'scripts/lib/dummy.mjs'), 'export const x = 1;\n');
+  await writeFile(join(dir, 'scripts/bin/validate.mjs'), 'export const run = () => 0;\n');
+  return dir;
+}
+
+test('init --provider ollama scaffolds .autoreview and precommit', async () => {
+  const { dir, cleanup } = await mkRepo();
+  const pluginDir = await mkPluginRoot();
+  try {
+    const c = capture();
+    const code = await run(['--provider', 'ollama'], {
+      cwd: dir,
+      env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir },
+      ...c,
+    });
+    assert.equal(code, 0);
+    await stat(join(dir, '.autoreview/config.yaml'));
+    await stat(join(dir, '.autoreview/rules/example.md'));
+    await stat(join(dir, '.git/hooks/pre-commit'));
+  } finally {
+    await cleanup();
+    await rm(pluginDir, { recursive: true, force: true });
+  }
+});
+
+test('re-running without --upgrade is a no-op warning', async () => {
+  const { dir, cleanup } = await mkRepo();
+  const pluginDir = await mkPluginRoot();
+  try {
+    const c1 = capture();
+    await run(['--provider', 'ollama'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir }, ...c1 });
+    const c2 = capture();
+    const code = await run(['--provider', 'ollama'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir }, ...c2 });
+    assert.equal(code, 0);
+    assert.match(c2.err(), /already exists/);
+  } finally {
+    await cleanup();
+    await rm(pluginDir, { recursive: true, force: true });
+  }
+});
+
+test('existing different pre-commit hook without flag exits 1', async () => {
+  const { dir, cleanup } = await mkRepo();
+  const pluginDir = await mkPluginRoot();
+  try {
+    await writeFile(join(dir, '.git/hooks/pre-commit'), '#!/bin/sh\n# custom hook\n');
+    await chmod(join(dir, '.git/hooks/pre-commit'), 0o755);
+    const c = capture();
+    const code = await run(['--provider', 'ollama'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir }, ...c });
+    assert.equal(code, 1);
+    assert.match(c.err(), /--precommit-(overwrite|skip|append)/);
+  } finally {
+    await cleanup();
+    await rm(pluginDir, { recursive: true, force: true });
+  }
+});
+
+test('.gitignore appended without duplicates', async () => {
+  const { dir, cleanup } = await mkRepo();
+  const pluginDir = await mkPluginRoot();
+  try {
+    const c1 = capture();
+    await run(['--provider', 'ollama'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir }, ...c1 });
+    const c2 = capture();
+    await run(['--provider', 'ollama', '--upgrade'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir, }, ...c2 });
+    const body = await readFile(join(dir, '.gitignore'), 'utf8');
+    assert.equal((body.match(/\.autoreview\/history\//g) || []).length, 1);
+  } finally {
+    await cleanup();
+    await rm(pluginDir, { recursive: true, force: true });
+  }
+});
+
+test('errors on unknown provider', async () => {
+  const { dir, cleanup } = await mkRepo();
+  try {
+    const c = capture();
+    const code = await run(['--provider', 'nonexistent'], { cwd: dir, env: process.env, ...c });
+    assert.equal(code, 1);
+    assert.match(c.err(), /unknown provider/);
+  } finally { await cleanup(); }
+});
