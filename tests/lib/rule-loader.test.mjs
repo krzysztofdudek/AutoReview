@@ -37,8 +37,11 @@ test('loads local rules with id from path', async () => {
 });
 
 test('local wins over remote on id collision', async () => {
+  // Local: .autoreview/rules/shared/x.md → id = "shared/x"
+  // Remote: .autoreview/remote_rules/shared/v1/x.md → id = "shared/x" (sourceName prefix)
+  // Both yield the same id → collision → local wins.
   const { dir, cleanup } = await fixture({
-    '.autoreview/rules/x.md': RULE('Local X', 'path:"**"'),
+    '.autoreview/rules/shared/x.md': RULE('Local X', 'path:"**"'),
     '.autoreview/remote_rules/shared/v1/x.md': RULE('Remote X', 'path:"**"'),
   });
   try {
@@ -47,6 +50,24 @@ test('local wins over remote on id collision', async () => {
     assert.equal(rules.length, 1);
     assert.equal(rules[0].frontmatter.name, 'Local X');
     assert.ok(warnings.some(w => w.includes('collision')));
+  } finally { await cleanup(); }
+});
+
+test('non-colliding local and remote produce two distinct rules', async () => {
+  // Local: .autoreview/rules/x.md → id = "x"
+  // Remote: .autoreview/remote_rules/shared/v1/x.md → id = "shared/x"
+  // Different ids → no collision → both rules loaded, no warning.
+  const { dir, cleanup } = await fixture({
+    '.autoreview/rules/x.md': RULE('Local X', 'path:"**"'),
+    '.autoreview/remote_rules/shared/v1/x.md': RULE('Remote X', 'path:"**"'),
+  });
+  try {
+    const cfg = { ...DEFAULT_CONFIG, remote_rules: [{ name: 'shared', url: '', ref: 'v1', path: '.' }] };
+    const { rules, warnings } = await loadRules(dir, cfg);
+    assert.equal(rules.length, 2);
+    const ids = rules.map(r => r.id).sort();
+    assert.deepEqual(ids, ['shared/x', 'x']);
+    assert.ok(!warnings.some(w => w.includes('collision')));
   } finally { await cleanup(); }
 });
 

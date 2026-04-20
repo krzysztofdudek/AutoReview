@@ -59,12 +59,7 @@ export async function loadRules(repoRoot, config) {
         const rel = relative(base, file);
         const r = await loadOne(file, rel, src.name, 'remote');
         if (r.error) { warnings.push(`remote rule ${src.name}/${rel}: ${r.error}`); continue; }
-        // Collision: check if a local rule already occupies the same relative path id
-        const relId = relative(base, file).replace(/\.md$/, '').replace(/\\/g, '/');
-        if (byId.has(relId)) {
-          warnings.push(`id collision for ${relId}: local overrides remote ${src.name}`);
-          continue;
-        }
+        // Collision: check if a local rule already occupies the same computed id
         if (byId.has(r.rule.id)) {
           warnings.push(`id collision for ${r.rule.id}: local overrides remote ${src.name}`);
           continue;
