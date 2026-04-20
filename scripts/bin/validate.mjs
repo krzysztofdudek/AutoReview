@@ -1,0 +1,118 @@
+#!/usr/bin/env node
+// scripts/bin/validate.mjs
+import { parseArgs } from '../lib/args.mjs';
+import { repoRoot } from '../lib/git-utils.mjs';
+import { loadConfig } from '../lib/config-loader.mjs';
+import { loadRules } from '../lib/rule-loader.mjs';
+import { resolveScope } from '../lib/scope-resolver.mjs';
+import { reviewFile } from '../lib/reviewer.mjs';
+import { getProvider } from '../lib/provider-client.mjs';
+import { createIntentGate } from '../lib/intent-gate.mjs';
+import { reportVerdicts } from '../lib/report.mjs';
+
+function stubProviderByEnv(env) {
+  const mode = env.AUTOREVIEW_STUB_PROVIDER;
+  if (!mode) return null;
+  const map = {
+    pass: { satisfied: true },
+    fail: { satisfied: false, reason: 'stub fail' },
+    error: { satisfied: false, providerError: true, raw: 'stub' },
+  };
+  return {
+    name: 'stub', model: 'stub',
+    async verify() { return map[mode]; },
+    contextWindowBytes: async () => 16384,
+  };
+}
+
+export async function run(argv, { cwd, env, stdout, stderr }) {
+  try {
+    return await _run(argv, { cwd, env, stdout, stderr });
+  } catch (err) {
+    stderr.write(`[error] internal: ${err.stack ?? err.message ?? String(err)}\n`);
+    const context = argv.includes('--context') ? argv[argv.indexOf('--context') + 1] : 'validate';
+    return context === 'precommit' ? 0 : 1;
+  }
+}
+
+async function _run(argv, { cwd, env, stdout, stderr }) {
+  const { values } = parseArgs(argv, {
+    multiple: ['rule', 'files'],
+    aliases: { r: 'rule', f: 'files', s: 'scope' },
+  });
+
+  let root;
+  try { root = await repoRoot(cwd); }
+  catch { stderr.write('[warn] not a git repo\n'); return 0; }
+
+  // Check if .autoreview exists before trying to load
+  const cfgPath = `${root}/.autoreview/config.yaml`;
+  const { readFileOrNull } = await import('../lib/fs-utils.mjs');
+  const cfgRaw = await readFileOrNull(cfgPath);
+  if (!cfgRaw) { stderr.write('[warn] autoreview not initialized\n'); return 0; }
+
+  let cfg;
+  try { cfg = await loadConfig(root); }
+  catch (err) {
+    stderr.write(`[warn] config load failed: ${err.message}\n`);
+    return 0;
+  }
+
+  const context = values.context ?? 'validate';
+  const ctxOverrides = cfg.context_overrides?.[context] ?? {};
+  cfg.review = { ...cfg.review, ...ctxOverrides };
+  if (values.mode) cfg.review.mode = values.mode;
+
+  // Design §4 invariant: precommit caps consensus at 1 (spawn budget).
+  if (context === 'precommit') cfg.review.consensus = 1;
+
+  const enforcement = cfg.enforcement?.[context] ?? (context === 'precommit' ? 'soft' : 'hard');
+
+  const { rules, warnings: ruleWarnings } = await loadRules(root, cfg);
+  for (const w of ruleWarnings) stderr.write(`[warn] ${w}\n`);
+  const filtered = values.rule ? rules.filter(r => values.rule.includes(r.id)) : rules;
+
+  const scopeArgs = {
+    repoRoot: root,
+    scope: values.scope ?? ctxOverrides.scope,
+    sha: values.sha,
+    files: values.files,
+    dir: values.dir,
+    walkCap: cfg.review.walk_file_cap ?? 10000,
+  };
+  const { entries, warnings } = await resolveScope(scopeArgs);
+  for (const w of warnings) stderr.write(`[warn] ${w}\n`);
+
+  const stubProvider = stubProviderByEnv(env);
+  const resolveProvider = (rule) => stubProvider ?? getProvider(cfg, {
+    ruleProvider: rule?.frontmatter?.provider,
+    ruleModel: rule?.frontmatter?.model,
+  });
+  const intentGate = createIntentGate({ resolveProvider, budget: cfg.review.intent_trigger_budget });
+
+  let hardFailure = false;
+  for (const entry of entries) {
+    if (entry.binary && filtered.some(r => /content:/.test(r.frontmatter.triggers))) {
+      stderr.write(`[warn] ${entry.path}: binary detected, content: predicates will not match\n`);
+    }
+    const { verdicts } = await reviewFile({
+      repoRoot: root, config: cfg, rules: filtered,
+      file: { path: entry.path, content: entry.content, binary: entry.binary },
+      diff: entry.diff,
+      intentGate, historyEnabled: cfg.history.log_to_file,
+      _providerOverride: stubProvider,
+    });
+    reportVerdicts(entry, verdicts, cfg.review.mode, stderr);
+    for (const v of verdicts) {
+      if (v.verdict === 'fail' || v.verdict === 'error') hardFailure = true;
+    }
+  }
+
+  if (enforcement === 'hard' && hardFailure) return 1;
+  return 0;
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  run(process.argv.slice(2), { cwd: process.cwd(), env: process.env, stdout: process.stdout, stderr: process.stderr })
+    .then(c => process.exit(c ?? 0));
+}
