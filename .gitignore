@@ -1,0 +1,6 @@
+
+# Worktrees
+.worktrees/
+
+# Docs / planning artifacts (uncommitted per user preference)
+docs/
