@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readFileOrNull, writeAtomic, isBinary, walk, readGitignore, pluginRoot } from '../../scripts/lib/fs-utils.mjs';
+import { readFileOrNull, writeAtomic, isBinary, walk, readGitignore, pluginRoot, sizeOf } from '../../scripts/lib/fs-utils.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 test('readFileOrNull returns null for missing path', async () => {
@@ -101,6 +101,23 @@ test('pluginRoot honors CLAUDE_PLUGIN_ROOT env var', () => {
 });
 
 test('pluginRoot falls back to three dirs up from caller', () => {
+  // Caller is tests/lib/fs-utils.test.mjs. Three dirs up == worktree root.
   const r = pluginRoot(import.meta.url, {});
-  assert.ok(r && !r.includes('tests/lib'));
+  // Must be a non-empty absolute path AND must not include `tests/lib`
+  assert.ok(r.startsWith('/'));
+  assert.ok(!r.includes('tests/lib'));
+  assert.ok(!r.includes('scripts'));
+});
+
+test('sizeOf returns byte size for existing file', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-'));
+  try {
+    const p = join(dir, 'a.txt');
+    await writeAtomic(p, 'hello');
+    assert.equal(await sizeOf(p), 5);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('sizeOf returns -1 for missing path', async () => {
+  assert.equal(await sizeOf('/no/such/path/xyz'), -1);
 });
