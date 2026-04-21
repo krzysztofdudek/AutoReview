@@ -19,6 +19,3 @@ export function scanSuppressMarkers(content) {
   return markers;
 }
 
-export function markersForRule(markers, ruleId) {
-  return markers.filter(m => m.ruleId === ruleId);
-}

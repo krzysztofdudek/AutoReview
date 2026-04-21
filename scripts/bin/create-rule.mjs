@@ -8,7 +8,6 @@ import { repoRoot } from '../lib/git-utils.mjs';
 import { loadConfig, DEFAULT_CONFIG } from '../lib/config-loader.mjs';
 import { getProvider } from '../lib/provider-client.mjs';
 import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchForContent } from '../lib/trigger-engine.mjs';
-import { buildPrompt } from '../lib/prompt-builder.mjs';
 import { renderRule, saveRule } from '../lib/rule-authoring.mjs';
 import { walk, isBinary, sizeOf } from '../lib/fs-utils.mjs';
 import { relative } from 'node:path';
