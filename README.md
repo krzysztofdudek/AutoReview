@@ -2,7 +2,7 @@
 
 **A rule file is a suggestion. This turns it into a verdict on every commit.**
 
-An LLM reviewer that reads one file at a time and checks it against Markdown rules you wrote in plain English. Ships as a Claude Code plugin. Runs offline with Ollama by default.
+An LLM reviewer that reads one file at a time and checks it against Markdown rules you wrote in plain English.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A520-green.svg)](https://nodejs.org)
@@ -37,7 +37,7 @@ The skill surface just wires it in. The enforcement happens in the reviewer loop
 
 ## How AutoReview is different from Yggdrasil
 
-This is the little sibling of [Yggdrasil](https://github.com/krzysztofdudek/Yggdrasil). Yggdrasil maps your whole codebase into a graph of rules, components, and flows. AutoReview drops all of that and keeps only the core loop. One file, matching rules, verdict.
+AutoReview and [Yggdrasil](https://github.com/krzysztofdudek/Yggdrasil) share the same reviewer loop. AutoReview stays per-file with a trigger-matched Markdown rule. Yggdrasil adds a graph of components, flows, and cross-file aspects on top.
 
 | | Yggdrasil | AutoReview |
 |---|---|---|
@@ -47,7 +47,7 @@ This is the little sibling of [Yggdrasil](https://github.com/krzysztofdudek/Yggd
 | Distribution | npm package with CLI | Claude Code plugin with CLI |
 | Deps | Node + a bunch | Node, zero npm deps |
 
-Start here. Graduate to Yggdrasil when you need architecture-wide reasoning.
+Use AutoReview when you want one rule on one file. Reach for Yggdrasil when rules need to reason across files.
 
 ## What a rule looks like
 
@@ -110,17 +110,9 @@ Agent:  Runs the 7-step wizard. Proposes a trigger, shows which files
 
 Commit. Hook runs. Done.
 
-## On-demand review
-
-```
-/autoreview:validate              uncommitted files, thinking mode
-/autoreview:validate --scope all  full repo sweep
-/autoreview:validate --sha HEAD~1 did that commit pass?
-```
-
 ## Pre-check before the agent writes
 
-Agent wants to know if a draft would pass before it writes the file to disk:
+The agent can ask "would this pass?" before writing the file to disk. Pass a draft in, get a verdict back, no disk write.
 
 ```bash
 autoreview validate \
@@ -128,7 +120,15 @@ autoreview validate \
   --target-path src/api/users.ts
 ```
 
-No write, verdict returned. Skill `autoreview-precheck` wraps this.
+Skill `autoreview-precheck` wraps this for Claude Code. Agent uses it to avoid writing code it would have to immediately rewrite after the reviewer rejects.
+
+## On-demand review
+
+```
+/autoreview:validate              uncommitted files, thinking mode
+/autoreview:validate --scope all  full repo sweep
+/autoreview:validate --sha HEAD~1 did that commit pass?
+```
 
 ## Providers
 
@@ -171,7 +171,7 @@ Personal config overrides repo config for any key. Switch provider on your machi
 
 ## Remote rules
 
-Share rules across repos:
+One team maintains shared rules in a single repo. Every product repo pins a tag and pulls them in. Update the tag to roll out changes.
 
 ```yaml
 remote_rules:
@@ -183,6 +183,15 @@ remote_rules:
 
 `/autoreview:pull-remote` clones the pinned ref into `.autoreview/remote_rules/`. Set `review.remote_rules_auto_pull: true` to refresh on every review run.
 
+## For teams
+
+Rules live in your repo. Personal config lives on your machine. API keys live in a gitignored file.
+
+- Commit `config.yaml` and the `rules/` directory with the rest of your code. Everyone on the team gets the same baseline.
+- Pull remote rules from a shared git repo. One team manages standards, many product repos use them.
+- Override per-developer in `config.personal.yaml` without touching the team config. Swap reviewer, raise reasoning effort, enable extra rules locally.
+- History log records provider, model, rule, verdict, and reason per review. Audit trail for every run.
+
 ## Exit codes
 
 - `0` pass, soft-fail, or no matching rules
@@ -191,7 +200,7 @@ remote_rules:
 
 CI that needs to distinguish crashed-tool from rule-rejected parses stderr. `[reject]` is rule. `[error]` is tool.
 
-## Soft-fail is non-negotiable
+## The tool never blocks a broken setup
 
 No Ollama running, no API key, no config. Commit still goes through. Warning on stderr, exit 0. This is not configurable. The tool is not allowed to break your workflow because it isn't set up right.
 
@@ -219,6 +228,15 @@ Delete `.autoreview/` and the pre-commit hook. No runtime dependencies, no build
 
 - [Functional spec](docs/specification.md), the 29-point contract.
 - [Implementation design](docs/superpowers/specs/2026-04-20-autoreview-plugin-design.md).
+
+## Testing
+
+```
+npm test                                     # unit + integration (stubs only)
+AUTOREVIEW_REAL_OLLAMA=1 npm test           # +real Ollama round-trip (requires daemon)
+```
+
+The real-Ollama test (`tests/e2e/real-ollama.test.mjs`) is skipped by default. Set `AUTOREVIEW_REAL_OLLAMA=1` to run it. Optionally set `OLLAMA_HOST` (default `http://localhost:11434`) and `AUTOREVIEW_REAL_MODEL` (default `qwen2.5-coder:7b`).
 
 ## License
 
