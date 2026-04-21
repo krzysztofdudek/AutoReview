@@ -27,7 +27,7 @@ async function copyPluginRuntime(repoRootPath, root) {
 
 export async function run(argv, { cwd, env, stdout, stderr }) {
   const { values } = parseArgs(argv, {
-    booleans: ['upgrade', 'skip-precommit', 'skip-example', 'precommit-overwrite', 'precommit-skip', 'precommit-append'],
+    booleans: ['upgrade', 'install-precommit', 'skip-example', 'precommit-overwrite', 'precommit-skip', 'precommit-append'],
   });
 
   let root;
@@ -116,7 +116,7 @@ export async function run(argv, { cwd, env, stdout, stderr }) {
   ]);
 
   // Step 9: precommit hook
-  if (!values['skip-precommit']) {
+  if (values['install-precommit']) {
     const precommitBody = await readFileOrNull(join(root_plugin, 'templates/precommit-hook.sh'))
       ?? '#!/usr/bin/env sh\nexec node "$(git rev-parse --show-toplevel)/.autoreview/runtime/bin/validate.mjs" --scope staged --context precommit "$@"\n';
     const status = await installPrecommit(root, precommitBody);
@@ -140,6 +140,8 @@ export async function run(argv, { cwd, env, stdout, stderr }) {
         return 1;
       }
     }
+  } else {
+    stdout.write(`pre-commit hook NOT installed (pass --install-precommit to install).\n`);
   }
 
   // Step 10: copy runtime

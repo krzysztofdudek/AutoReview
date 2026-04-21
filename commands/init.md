@@ -1,6 +1,6 @@
 ---
 description: Bootstrap AutoReview in the current repo
-argument-hint: "[--upgrade] [--provider <name>]"
+argument-hint: "[--upgrade] [--provider <name>] [--install-precommit]"
 ---
 
 Run: `node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/init.mjs $ARGUMENTS`

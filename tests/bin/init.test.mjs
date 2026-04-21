@@ -37,7 +37,27 @@ async function mkPluginRoot() {
   return dir;
 }
 
-test('init --provider ollama scaffolds .autoreview and precommit', async () => {
+test('init --provider ollama scaffolds .autoreview and precommit when --install-precommit passed', async () => {
+  const { dir, cleanup } = await mkRepo();
+  const pluginDir = await mkPluginRoot();
+  try {
+    const c = capture();
+    const code = await run(['--provider', 'ollama', '--install-precommit'], {
+      cwd: dir,
+      env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir },
+      ...c,
+    });
+    assert.equal(code, 0);
+    await stat(join(dir, '.autoreview/config.yaml'));
+    await stat(join(dir, '.autoreview/rules/example.md'));
+    await stat(join(dir, '.git/hooks/pre-commit'));
+  } finally {
+    await cleanup();
+    await rm(pluginDir, { recursive: true, force: true });
+  }
+});
+
+test('init without --install-precommit does NOT create pre-commit hook', async () => {
   const { dir, cleanup } = await mkRepo();
   const pluginDir = await mkPluginRoot();
   try {
@@ -48,9 +68,9 @@ test('init --provider ollama scaffolds .autoreview and precommit', async () => {
       ...c,
     });
     assert.equal(code, 0);
-    await stat(join(dir, '.autoreview/config.yaml'));
-    await stat(join(dir, '.autoreview/rules/example.md'));
-    await stat(join(dir, '.git/hooks/pre-commit'));
+    const hookStat = await stat(join(dir, '.git/hooks/pre-commit')).catch(() => null);
+    assert.equal(hookStat, null, 'pre-commit hook should not be created without --install-precommit');
+    assert.match(c.out(), /NOT installed/);
   } finally {
     await cleanup();
     await rm(pluginDir, { recursive: true, force: true });
@@ -80,7 +100,7 @@ test('existing different pre-commit hook without flag exits 1', async () => {
     await writeFile(join(dir, '.git/hooks/pre-commit'), '#!/bin/sh\n# custom hook\n');
     await chmod(join(dir, '.git/hooks/pre-commit'), 0o755);
     const c = capture();
-    const code = await run(['--provider', 'ollama'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir }, ...c });
+    const code = await run(['--provider', 'ollama', '--install-precommit'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir }, ...c });
     assert.equal(code, 1);
     assert.match(c.err(), /--precommit-(overwrite|skip|append)/);
   } finally {
@@ -153,7 +173,7 @@ test('init auto-pulls remote_rules declared in template', async () => {
 
   try {
     const c = capture();
-    const code = await run(['--provider', 'ollama', '--skip-precommit'], {
+    const code = await run(['--provider', 'ollama'], {
       cwd: dir,
       env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir },
       ...c,
