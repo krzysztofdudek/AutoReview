@@ -9,6 +9,38 @@ import { readFileOrNull } from './fs-utils.mjs';
 
 const SENTINEL = '.autoreview-managed';
 
+const URL_RE = /^(?:https?:\/\/|git@[A-Za-z0-9._-]+:|ssh:\/\/|git:\/\/|file:\/\/|\/)[A-Za-z0-9@._\-:/_]+(?:\.git)?$/;
+
+function validateRemoteUrl(url) {
+  if (typeof url !== 'string' || url.length === 0) {
+    throw new Error('remote url must be a non-empty string');
+  }
+  if (url.startsWith('-')) {
+    throw new Error(`remote url cannot start with '-': ${url}`);
+  }
+  if (!URL_RE.test(url)) {
+    throw new Error(`remote url must use https/http/git/ssh scheme: ${url}`);
+  }
+}
+
+function validateIdent(name, kind) {
+  if (typeof name !== 'string' || name.length === 0) {
+    throw new Error(`remote ${kind} must be a non-empty string`);
+  }
+  if (name.includes('..') || name.startsWith('/') || name.startsWith('-')) {
+    throw new Error(`remote ${kind} cannot contain '..', start with '/', or start with '-': ${name}`);
+  }
+  if (kind === 'name' && !/^[A-Za-z0-9._-]+$/.test(name)) {
+    throw new Error(`remote name must match [A-Za-z0-9._-]+: ${name}`);
+  }
+  if (kind === 'ref' && !/^[A-Za-z0-9._\-\/]+$/.test(name)) {
+    throw new Error(`remote ref must match [A-Za-z0-9._-\\/]+: ${name}`);
+  }
+  if (kind === 'path' && !/^[A-Za-z0-9._\-\/]*$/.test(name)) {
+    throw new Error(`remote path must match [A-Za-z0-9._-\\/]*: ${name}`);
+  }
+}
+
 function gitHard(args, cwd, env) {
   return new Promise((resolve, reject) => {
     const p = spawn('git', args, {
@@ -36,6 +68,10 @@ async function isAllMarkdown(dir) {
 }
 
 export async function pullSource({ repoRoot, source, env = process.env }) {
+  validateRemoteUrl(source.url);
+  validateIdent(source.name, 'name');
+  validateIdent(source.ref, 'ref');
+  if (source.path !== undefined && source.path !== null) validateIdent(source.path, 'path');
   const target = join(repoRoot, '.autoreview/remote_rules', source.name, source.ref);
   let exists = false;
   try { exists = (await stat(target)).isDirectory(); } catch {}
@@ -50,7 +86,7 @@ export async function pullSource({ repoRoot, source, env = process.env }) {
   const tmp = await mkdtemp(join(tmpdir(), 'ar-pull-'));
   try {
     await gitHard(
-      ['clone', '--depth', '1', '-c', 'core.hooksPath=/dev/null', '--branch', source.ref, source.url, tmp],
+      ['clone', '--depth', '1', '-c', 'core.hooksPath=/dev/null', '--branch', source.ref, '--', source.url, tmp],
       process.cwd(),
       env,
     );
