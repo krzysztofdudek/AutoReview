@@ -4,6 +4,16 @@
 import { request, withRetry, retryable } from '../http-client.mjs';
 import { parseResponse } from '../response-parser.mjs';
 
+export async function ollamaHasModel(endpoint, model) {
+  try {
+    const r = await request({ url: `${endpoint}/api/tags`, timeoutMs: 2000 });
+    if (r.status !== 200) return false;
+    const payload = JSON.parse(r.body);
+    const models = payload.models ?? [];
+    return models.some(m => m.name === model || m.name.startsWith(`${model}:`));
+  } catch { return false; }
+}
+
 export function create({ endpoint, model }) {
   return {
     name: 'ollama',

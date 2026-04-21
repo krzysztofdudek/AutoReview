@@ -4,7 +4,19 @@ import { mkdtemp, writeFile, mkdir, rm, stat, readFile, chmod, rmdir } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { run } from '../../scripts/bin/init.mjs';
+
+function spinHttpServer(routes) {
+  return new Promise(resolve => {
+    const s = createServer((req, res) => {
+      const r = routes[req.url];
+      if (!r) { res.writeHead(404); res.end(); return; }
+      r(req, res);
+    });
+    s.listen(0, () => resolve({ port: s.address().port, close: () => new Promise(r => s.close(r)) }));
+  });
+}
 
 function capture() {
   const out = [], err = [];
@@ -204,5 +216,49 @@ test('init returns 2 on internal error (spec §28)', async () => {
   } finally {
     await cleanup();
     await rm(tmpFile, { recursive: true, force: true });
+  }
+});
+
+test('init emits pull command when ollama model missing', async () => {
+  const { dir, cleanup } = await mkRepo();
+  const pluginDir = await mkPluginRoot();
+  const { port, close } = await spinHttpServer({
+    '/api/tags': (q, r) => { r.writeHead(200); r.end(JSON.stringify({ models: [] })); },
+  });
+  try {
+    const c = capture();
+    const code = await run(['--provider', 'ollama'], {
+      cwd: dir,
+      env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir, OLLAMA_HOST: `http://127.0.0.1:${port}` },
+      ...c,
+    });
+    assert.equal(code, 0);
+    assert.match(c.out(), /ollama pull qwen2.5-coder:7b/);
+  } finally {
+    await cleanup();
+    await rm(pluginDir, { recursive: true, force: true });
+    await close();
+  }
+});
+
+test('init emits no pull hint when ollama model is already present', async () => {
+  const { dir, cleanup } = await mkRepo();
+  const pluginDir = await mkPluginRoot();
+  const { port, close } = await spinHttpServer({
+    '/api/tags': (q, r) => { r.writeHead(200); r.end(JSON.stringify({ models: [{ name: 'qwen2.5-coder:7b' }] })); },
+  });
+  try {
+    const c = capture();
+    const code = await run(['--provider', 'ollama'], {
+      cwd: dir,
+      env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir, OLLAMA_HOST: `http://127.0.0.1:${port}` },
+      ...c,
+    });
+    assert.equal(code, 0);
+    assert.doesNotMatch(c.out(), /\[next-step\].*ollama pull/);
+  } finally {
+    await cleanup();
+    await rm(pluginDir, { recursive: true, force: true });
+    await close();
   }
 });

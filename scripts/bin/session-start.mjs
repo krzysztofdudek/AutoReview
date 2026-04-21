@@ -3,6 +3,7 @@
 import { readFileOrNull, pluginRoot } from '../lib/fs-utils.mjs';
 import { loadConfig } from '../lib/config-loader.mjs';
 import { getProvider } from '../lib/provider-client.mjs';
+import { ollamaHasModel } from '../lib/providers/ollama.mjs';
 import { join } from 'node:path';
 import { readdir } from 'node:fs/promises';
 
@@ -28,6 +29,15 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
       new Promise(r => setTimeout(() => r('timeout'), 1000)),
     ]);
     stderr.write(`provider ${p.name}: ${avail === true ? 'reachable' : avail === 'timeout' ? 'timeout' : 'unreachable'}\n`);
+
+    if (p.name === 'ollama' && avail === true) {
+      const endpoint = cfg.provider?.ollama?.endpoint ?? 'http://localhost:11434';
+      const model = cfg.provider?.ollama?.model ?? 'qwen2.5-coder:7b';
+      const hasModel = await ollamaHasModel(endpoint, model);
+      if (!hasModel) {
+        stderr.write(`[warn] Ollama model '${model}' not pulled — run: ollama pull ${model}\n`);
+      }
+    }
 
     try {
       const dirs = await readdir(join(cwd, '.autoreview/remote_rules'));

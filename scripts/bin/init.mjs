@@ -8,6 +8,7 @@ import { pluginRoot, readFileOrNull } from '../lib/fs-utils.mjs';
 import { request } from '../lib/http-client.mjs';
 import { pullSource } from '../lib/remote-rules-pull.mjs';
 import { parse as parseYaml } from '../lib/yaml-min.mjs';
+import { ollamaHasModel } from '../lib/providers/ollama.mjs';
 
 const KNOWN_PROVIDERS = ['ollama', 'anthropic', 'openai', 'google', 'openai-compat', 'claude-code', 'codex', 'gemini-cli'];
 
@@ -167,6 +168,21 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   }
 
   stdout.write(`\n.autoreview/ initialized with provider=${chosen}.\nNext: /autoreview:create-rule or /autoreview:validate\n`);
+
+  // UX: after writing config, check if ollama model is actually pulled.
+  if (chosen === 'ollama') {
+    const defaultModel = 'qwen2.5-coder:7b';
+    const endpoint = env.OLLAMA_HOST ?? 'http://localhost:11434';
+    if (await ollamaReachable()) {
+      const hasModel = await ollamaHasModel(endpoint, defaultModel);
+      if (!hasModel) {
+        stdout.write(`\n[next-step] Pull the reviewer model before first use:\n  ollama pull ${defaultModel}\n`);
+      }
+    } else {
+      stdout.write(`\n[next-step] Ollama not detected. Install it (https://ollama.ai), then:\n  ollama serve &\n  ollama pull ${defaultModel}\n`);
+    }
+  }
+
   return 0;
 }
 
