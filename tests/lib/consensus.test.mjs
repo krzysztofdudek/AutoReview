@@ -50,3 +50,15 @@ test('majority providerError surfaces providerError', async () => {
   const r = await voteConsensus(p, 'p', { consensus: 3, maxTokens: 100 });
   assert.equal(r.providerError, true);
 });
+
+test('voteConsensus times out a hanging provider call', async () => {
+  const stuck = {
+    name: 'stuck', model: 'x',
+    async verify() { return new Promise(() => {}); }, // never resolves
+  };
+  const start = Date.now();
+  const r = await voteConsensus(stuck, 'p', { consensus: 1, maxTokens: 100, timeoutMs: 100 });
+  const elapsed = Date.now() - start;
+  assert.ok(elapsed < 500, `expected ~100ms, took ${elapsed}ms`);
+  assert.equal(r.providerError, true);
+});

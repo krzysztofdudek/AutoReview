@@ -1,8 +1,27 @@
 // scripts/lib/consensus.mjs
-export async function voteConsensus(provider, prompt, { consensus, maxTokens, reasoningEffort } = {}) {
+
+async function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function voteConsensus(provider, prompt, { consensus = 1, maxTokens, reasoningEffort, timeoutMs = 120_000 } = {}) {
   const calls = [];
   for (let i = 0; i < consensus; i++) {
-    calls.push(provider.verify(prompt, { maxTokens, reasoningEffort }));
+    calls.push(
+      withTimeout(
+        provider.verify(prompt, { maxTokens, reasoningEffort }),
+        timeoutMs,
+        `${provider.name} verify call ${i + 1}/${consensus}`,
+      ).catch(err => ({ satisfied: false, providerError: true, raw: String(err) })),
+    );
   }
   const results = await Promise.all(calls);
   const good = results.filter(r => !r.providerError);
