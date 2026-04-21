@@ -1,4 +1,3 @@
-
 # Worktrees
 .worktrees/
 
@@ -11,10 +10,6 @@ node_modules/
 .autoreview/config.secrets.yaml
 .autoreview/runtime/
 
-# Docs working notes (local only, not committed)
-docs/note.md
-docs/superpowers/plans/
-
 # Example run side-effects (local only)
 examples/*/.git/
 examples/*/.autoreview/runtime/
@@ -22,3 +17,6 @@ examples/*/.autoreview/.history/
 
 # OS-specific
 .DS_Store
+
+# Own
+.temp
