@@ -16,6 +16,24 @@ function captureStreams() {
   };
 }
 
+test('internal crash in validate context exits 2 (3-state spec §28)', async () => {
+  const { dir, run: git, cleanup } = await makeRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
+    await writeFile(join(dir, 'a.ts'), 'x');
+    git('add', 'a.ts');
+    const streams = captureStreams();
+    // Mutually-exclusive scope args trigger a throw from scope-resolver inside _run
+    const code = await run(['--scope', 'staged', '--sha', 'HEAD'], {
+      cwd: dir, env: process.env, ...streams,
+    });
+    assert.equal(code, 2);
+    assert.match(streams.err(), /\[error\] internal/);
+  } finally { await cleanup(); }
+});
+
 test('exits 0 with warning when .autoreview missing', async () => {
   const { dir, cleanup } = await makeRepo();
   try {

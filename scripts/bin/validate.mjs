@@ -31,7 +31,7 @@ export async function run(argv, { cwd, env, stdout, stderr }) {
   } catch (err) {
     stderr.write(`[error] internal: ${err.stack ?? err.message ?? String(err)}\n`);
     const context = argv.includes('--context') ? argv[argv.indexOf('--context') + 1] : 'validate';
-    return context === 'precommit' ? 0 : 1;
+    return context === 'precommit' ? 0 : 2;
   }
 }
 
