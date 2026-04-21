@@ -115,7 +115,12 @@ export async function reviewFile(opts) {
     else verdict = vote.satisfied ? 'pass' : 'fail';
 
     const rec = { rule: rule.id, verdict, reason: vote.reason ?? null, provider: provider.name, model: provider.model, mode, duration_ms };
-    if (hasSuppressed) rec.suppressed = vote.suppressed;
+    if (hasSuppressed) {
+      rec.suppressed = vote.suppressed.map(s => {
+        const match = ruleMarkers.find(m => m.line === s.line);
+        return match ? { ...s, scope_hint: match.scope } : s;
+      });
+    }
     verdicts.push(rec);
     matchedVerdicts[rule.id] = verdict;
     if (historyEnabled) await appendVerdict(repoRoot, { file: file.path, ...rec });

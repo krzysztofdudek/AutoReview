@@ -268,6 +268,27 @@ test('invalid marker (missing reason) emits warning but still calls provider', a
   }
 });
 
+test('scope_hint from parser enriches suppressed records when line matches', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
+  try {
+    const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
+    // Line 1 is within first 5 lines → scope 'file-top'
+    const content = '// @autoreview-ignore r explain\nconst x = 1;';
+    const res = await reviewFile({
+      repoRoot: dir, config: DEFAULT_CONFIG, rules: [rule],
+      file: { path: 'a.ts', content },
+      diff: null, intentGate: null, historyEnabled: false,
+      _providerOverride: {
+        name: 'stub', model: 'm',
+        verify: async () => ({ satisfied: true, reason: 'ok', suppressed: [{ line: 1, reason: 'explain' }] }),
+        contextWindowBytes: async () => 16384,
+      },
+    });
+    assert.equal(res.verdicts[0].verdict, 'suppressed');
+    assert.equal(res.verdicts[0].suppressed[0].scope_hint, 'file-top');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('historyEnabled writes verdict + file-summary lines', async () => {
   clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-h-'));
