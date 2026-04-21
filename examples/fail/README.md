@@ -2,10 +2,10 @@
 
 This project has one AutoReview rule that `src/broken.ts` deliberately violates. Useful for seeing a `[reject]` verdict.
 
-**Prerequisite:** Ollama running on localhost:11434 with `qwen2.5-coder:7b` pulled:
+**Prerequisite:** Ollama running on localhost:11434 with `gemma4:e4b` pulled:
 ```
 ollama serve &
-ollama pull qwen2.5-coder:7b
+ollama pull gemma4:e4b
 ```
 
 **Run:**
