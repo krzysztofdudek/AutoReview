@@ -20,16 +20,30 @@ const FACTORIES = {
 
 const CACHE = new Map();
 
+const ENDPOINT_KEY = {
+  ollama: 'endpoint',
+  anthropic: 'url',
+  openai: 'url',
+  google: 'baseUrl',
+  'openai-compat': 'endpoint',
+  'claude-code': null,
+  codex: null,
+  'gemini-cli': null,
+};
+
 export function getProvider(config, { ruleProvider, ruleModel } = {}) {
   const name = ruleProvider ?? config.provider.active;
-  if (!FACTORIES[name]) throw new Error(`unknown provider: ${name}`);
+  if (!FACTORIES[name]) throw new Error(`unknown provider: ${name}. Known: ${Object.keys(FACTORIES).join(', ')}`);
   const provCfg = config.provider[name] ?? {};
   const model = ruleModel ?? provCfg.model;
   const endpoint = provCfg.endpoint;
   const apiKey = config.secrets?.[name]?.api_key ?? '';
   const key = `${name}|${model}|${endpoint ?? ''}|${apiKey ? 'K' : ''}`;
   if (CACHE.has(key)) return CACHE.get(key);
-  const p = FACTORIES[name]({ model, endpoint, apiKey });
+  const factoryArgs = { model, apiKey };
+  const epKey = ENDPOINT_KEY[name];
+  if (epKey && endpoint) factoryArgs[epKey] = endpoint;
+  const p = FACTORIES[name](factoryArgs);
   CACHE.set(key, p);
   return p;
 }

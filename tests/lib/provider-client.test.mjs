@@ -34,3 +34,26 @@ test('instances memoized across calls with same key', () => {
   const p2 = getProvider(DEFAULT_CONFIG, {});
   assert.equal(p1, p2);
 });
+
+test('custom anthropic endpoint passed through to provider', () => {
+  clearProviderCache();
+  const cfg = {
+    ...DEFAULT_CONFIG,
+    provider: {
+      ...DEFAULT_CONFIG.provider,
+      anthropic: { model: 'claude-haiku-4-5', endpoint: 'https://proxy.example.com/v1/messages' },
+    },
+    secrets: { anthropic: { api_key: 'sk-test' } },
+  };
+  const p = getProvider(cfg, { ruleProvider: 'anthropic' });
+  assert.equal(p.name, 'anthropic');
+  // Constructing with a custom URL should not throw
+});
+
+test('unknown provider error lists known values', () => {
+  clearProviderCache();
+  assert.throws(
+    () => getProvider(DEFAULT_CONFIG, { ruleProvider: 'nope' }),
+    /unknown provider: nope\. Known: ollama/,
+  );
+});
