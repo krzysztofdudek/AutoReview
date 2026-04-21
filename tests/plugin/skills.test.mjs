@@ -11,8 +11,8 @@ test('every skill has a name + description frontmatter', async () => {
   }
 });
 
-test('all 5 expected skills exist', async () => {
+test('all 6 expected skills exist', async () => {
   const skills = await readdir('skills');
-  const expected = ['autoreview-setup', 'autoreview-create-rule', 'autoreview-review', 'autoreview-context', 'autoreview-guide'];
+  const expected = ['autoreview-setup', 'autoreview-create-rule', 'autoreview-review', 'autoreview-context', 'autoreview-guide', 'autoreview-precheck'];
   for (const e of expected) assert.ok(skills.includes(e), `missing skill: ${e}`);
 });
