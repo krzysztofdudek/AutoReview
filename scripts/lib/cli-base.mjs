@@ -33,7 +33,7 @@ export function runCli({ binary, args = [], stdin = null, timeoutMs = 120_000, e
 }
 
 export async function whichBinary(name, { timeoutMs = 5000 } = {}) {
-  const r = await runCli({ binary: 'sh', args: ['-c', `command -v ${name}`], stdin: null, timeoutMs });
+  const r = await runCli({ binary: 'sh', args: ['-c', 'command -v "$1"', 'whichBinary', name], stdin: null, timeoutMs });
   const out = r.stdout.trim();
   return r.exitCode === 0 && out ? out : null;
 }

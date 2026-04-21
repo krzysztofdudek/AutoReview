@@ -36,3 +36,10 @@ test('whichBinary returns path for sh', async () => {
 test('whichBinary returns null for missing binary', async () => {
   assert.equal(await whichBinary('definitely-does-not-exist-xyz'), null);
 });
+
+test('whichBinary resists shell injection in name', async () => {
+  // A name containing `; rm -rf /` must not execute rm. Since `name` is passed
+  // as $1, shell never interprets it as a command.
+  const p = await whichBinary('x; echo INJECTED');
+  assert.equal(p, null);
+});
