@@ -247,3 +247,21 @@ test('stub error in validate hard context exits 0 (spec §22 soft-fail on provid
     assert.match(streams.err(), /\[error\]/);
   } finally { await cleanup(); }
 });
+
+test('precommit quick mode with reject prints debug hint', async () => {
+  const { dir, run: git, cleanup } = await makeRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  precommit: soft\n');
+    await writeFile(join(dir, '.autoreview/rules/r.md'),
+      `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
+    await writeFile(join(dir, 'a.ts'), 'x');
+    git('add', 'a.ts');
+    const streams = captureStreams();
+    const code = await run(['--scope', 'staged', '--context', 'precommit'], {
+      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'fail' }, ...streams,
+    });
+    assert.equal(code, 0);
+    assert.match(streams.err(), /\[hint\].*thinking/i);
+  } finally { await cleanup(); }
+});

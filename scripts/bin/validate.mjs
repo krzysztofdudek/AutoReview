@@ -162,6 +162,11 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
 
   if (historySession) await historySession.close();
 
+  // UX: print a debug hint when precommit quick-mode has rejects
+  if (context === 'precommit' && cfg.review.mode === 'quick' && hardFailure) {
+    stderr.write(`\n[hint] One or more rules rejected. For file:line details, re-run with thinking mode:\n  node ${env.CLAUDE_PLUGIN_ROOT ?? 'plugin-root'}/scripts/bin/validate.mjs --files <path> --rule <rule-id> --mode thinking\n  Or ask the AutoReview agent "why did the commit fail?"\n`);
+  }
+
   if (enforcement === 'soft' && hardFailure) {
     stderr.write(`[info] review would have blocked under hard enforcement (${rejectCount} rule(s) rejected) — exit 0 per soft mode\n`);
   }
