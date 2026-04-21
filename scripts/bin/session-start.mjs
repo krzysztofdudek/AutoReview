@@ -6,7 +6,16 @@ import { getProvider } from '../lib/provider-client.mjs';
 import { join } from 'node:path';
 import { readdir } from 'node:fs/promises';
 
-export async function run(argv, { cwd, env, stdout, stderr }) {
+export async function run(argv, ctx) {
+  try {
+    return await _run(argv, ctx);
+  } catch (err) {
+    ctx.stderr.write(`[error] internal: ${err.stack ?? err.message ?? String(err)}\n`);
+    return 0; // hook must never block
+  }
+}
+
+async function _run(argv, { cwd, env, stdout, stderr }) {
   const cfgPath = join(cwd, '.autoreview/config.yaml');
   const cfgRaw = await readFileOrNull(cfgPath);
   if (!cfgRaw) { stderr.write('AutoReview not initialized in this repo\n'); return 0; }

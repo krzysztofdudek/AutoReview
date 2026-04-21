@@ -8,7 +8,16 @@ import { loadRules } from '../lib/rule-loader.mjs';
 import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchForContent } from '../lib/trigger-engine.mjs';
 import { isBinary } from '../lib/fs-utils.mjs';
 
-export async function run(argv, { cwd, env, stdout, stderr }) {
+export async function run(argv, ctx) {
+  try {
+    return await _run(argv, ctx);
+  } catch (err) {
+    ctx.stderr.write(`[error] internal: ${err.stack ?? err.message ?? String(err)}\n`);
+    return 2;
+  }
+}
+
+async function _run(argv, { cwd, env, stdout, stderr }) {
   const [target] = argv;
   if (!target) { stderr.write('[error] usage: context <path>\n'); return 1; }
 

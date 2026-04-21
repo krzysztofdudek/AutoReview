@@ -9,7 +9,16 @@ import { walk, isBinary, sizeOf } from '../lib/fs-utils.mjs';
 import { readFile } from 'node:fs/promises';
 import { relative } from 'node:path';
 
-export async function run(argv, { cwd, env, stdout, stderr }) {
+export async function run(argv, ctx) {
+  try {
+    return await _run(argv, ctx);
+  } catch (err) {
+    ctx.stderr.write(`[error] internal: ${err.stack ?? err.message ?? String(err)}\n`);
+    return 2;
+  }
+}
+
+async function _run(argv, { cwd, env, stdout, stderr }) {
   const { values } = parseArgs(argv);
   const sample = parseInt(values.sample ?? '10', 10);
   let expr;

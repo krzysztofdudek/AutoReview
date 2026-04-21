@@ -13,7 +13,16 @@ import { renderRule, saveRule } from '../lib/rule-authoring.mjs';
 import { walk, isBinary, sizeOf } from '../lib/fs-utils.mjs';
 import { relative } from 'node:path';
 
-export async function run(argv, { cwd, env, stdout, stderr }) {
+export async function run(argv, ctx) {
+  try {
+    return await _run(argv, ctx);
+  } catch (err) {
+    ctx.stderr.write(`[error] internal: ${err.stack ?? err.message ?? String(err)}\n`);
+    return 2;
+  }
+}
+
+async function _run(argv, { cwd, env, stdout, stderr }) {
   const [sub, ...rest] = argv;
   if (!sub) {
     stderr.write('[error] usage: create-rule <breadth|intent-test|test-drive|save> [options]\n');
