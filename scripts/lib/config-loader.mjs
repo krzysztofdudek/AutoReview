@@ -62,6 +62,22 @@ function validate(cfg) {
   for (const r of cfg.remote_rules ?? []) {
     if (names.has(r.name)) throw new Error(`duplicate remote_rules name: ${r.name}`);
     names.add(r.name);
+
+    // Security: path traversal defense for remote_rules.
+    if (!r.name || typeof r.name !== 'string' || !/^[A-Za-z0-9._-]+$/.test(r.name)) {
+      throw new Error(`remote_rules.name must match [A-Za-z0-9._-]+, got: ${r.name}`);
+    }
+    if (!r.ref || typeof r.ref !== 'string' || /\.\.|^\/|^-/.test(r.ref)) {
+      throw new Error(`remote_rules.ref invalid (no '..', leading '/', or leading '-'): ${r.ref}`);
+    }
+    if (r.path !== undefined && r.path !== null) {
+      if (typeof r.path !== 'string' || /\.\.|^\/|^-/.test(r.path)) {
+        throw new Error(`remote_rules.path invalid: ${r.path}`);
+      }
+    }
+    if (!r.url || typeof r.url !== 'string' || r.url.startsWith('-')) {
+      throw new Error(`remote_rules.url must be non-empty and not start with '-': ${r.url}`);
+    }
   }
   const knownProviders = ['ollama', 'claude-code', 'codex', 'gemini-cli', 'anthropic', 'openai', 'google', 'openai-compat'];
   if (!knownProviders.includes(cfg.provider.active)) {

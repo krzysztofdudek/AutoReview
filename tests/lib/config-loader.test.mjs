@@ -118,3 +118,30 @@ test('duplicate remote_rules names throws', async () => {
     await assert.rejects(() => loadConfig(dir), /duplicate/i);
   } finally { await cleanup(); }
 });
+
+test('config rejects remote_rules name with path traversal', async () => {
+  const { dir, cleanup } = await fixtureRepo({
+    'config.yaml': 'remote_rules:\n  - {name: "../evil", url: "https://x.com/x.git", ref: v1, path: "."}\n',
+  });
+  try {
+    await assert.rejects(() => loadConfig(dir), /name must match/);
+  } finally { await cleanup(); }
+});
+
+test('config rejects remote_rules ref with ..', async () => {
+  const { dir, cleanup } = await fixtureRepo({
+    'config.yaml': 'remote_rules:\n  - {name: shared, url: "https://x.com/x.git", ref: "../../escape", path: "."}\n',
+  });
+  try {
+    await assert.rejects(() => loadConfig(dir), /ref invalid/);
+  } finally { await cleanup(); }
+});
+
+test('config rejects remote_rules url starting with dash', async () => {
+  const { dir, cleanup } = await fixtureRepo({
+    'config.yaml': 'remote_rules:\n  - {name: shared, url: "--evil", ref: v1, path: "."}\n',
+  });
+  try {
+    await assert.rejects(() => loadConfig(dir), /url.*'-'/);
+  } finally { await cleanup(); }
+});
