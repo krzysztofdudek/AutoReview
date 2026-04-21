@@ -1,0 +1,13 @@
+{
+  "name": "autoreview-marketplace",
+  "owner": {
+    "name": "Krzysztof Dudek"
+  },
+  "plugins": [
+    {
+      "name": "autoreview",
+      "source": ".",
+      "description": "Per-file LLM code review against Markdown rules. Ollama-first, offline, zero npm deps."
+    }
+  ]
+}
