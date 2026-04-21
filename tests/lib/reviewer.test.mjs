@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { reviewFile, clearContextWindowCache } from '../../scripts/lib/reviewer.mjs';
 import { DEFAULT_CONFIG } from '../../scripts/lib/config-loader.mjs';
 import { parse as parseTrigger } from '../../scripts/lib/trigger-engine.mjs';
+import { buildPrompt } from '../../scripts/lib/prompt-builder.mjs';
 
 function stubProviderClient(verifyResult) {
   return {
@@ -138,6 +139,29 @@ test('contextWindowBytes memoized across rules', async () => {
       _providerOverride: prov,
     });
     assert.equal(calls, 1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('per-rule frontmatter.evaluate overrides global evaluate (§20)', async () => {
+  clearContextWindowCache();
+  const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
+  try {
+    // Global default is 'diff'; rule overrides to 'full'
+    const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
+    rule.frontmatter.evaluate = 'full';
+    let capturedPrompt = null;
+    const prov = {
+      name: 'stub', model: 'm',
+      verify: async (prompt) => { capturedPrompt = prompt; return { satisfied: true, reason: 'ok' }; },
+      contextWindowBytes: async () => 16384,
+    };
+    await reviewFile({
+      repoRoot: dir, config: DEFAULT_CONFIG, rules: [rule],
+      file: { path: 'a.ts', content: 'x' }, diff: null, intentGate: null, historyEnabled: false,
+      _providerOverride: prov,
+    });
+    assert.ok(capturedPrompt, 'provider should have been called');
+    assert.match(capturedPrompt, /Evaluate: full/, 'prompt should contain per-rule evaluate=full');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

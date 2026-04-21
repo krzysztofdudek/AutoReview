@@ -7,7 +7,7 @@ import { voteConsensus } from './consensus.mjs';
 import { appendVerdict, appendFileSummary } from './history.mjs';
 
 function resolveMode(config) { return config.review.mode; }
-function resolveEvaluate(config) { return config.review.evaluate; }
+function resolveEvaluate(config, rule) { return rule?.frontmatter?.evaluate ?? config.review.evaluate; }
 
 function triggersAst(rule) {
   if (rule._triggersAst) return rule._triggersAst;
@@ -77,7 +77,7 @@ export async function reviewFile(opts) {
     const mode = resolveMode(config);
     const prompt = buildPrompt({
       rule, file: effectiveFile, diff,
-      mode, evaluate: resolveEvaluate(config),
+      mode, evaluate: resolveEvaluate(config, rule),
     });
     const start = Date.now();
     const vote = await voteConsensus(provider, prompt, {
