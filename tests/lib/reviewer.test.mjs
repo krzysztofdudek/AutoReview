@@ -25,6 +25,7 @@ function makeRule({ id, name, triggers, body, provider = null, model = null, int
 }
 
 test('file matches rule, provider says pass', async () => {
+  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
@@ -41,6 +42,7 @@ test('file matches rule, provider says pass', async () => {
 });
 
 test('rule does not match — no verdict recorded', async () => {
+  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"src/api/**"' });
@@ -55,6 +57,7 @@ test('rule does not match — no verdict recorded', async () => {
 });
 
 test('providerError yields error verdict', async () => {
+  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**"' });
@@ -68,6 +71,7 @@ test('providerError yields error verdict', async () => {
 });
 
 test('intent gate skip-no drops the verdict', async () => {
+  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**"', intent: 'handler' });
@@ -83,6 +87,7 @@ test('intent gate skip-no drops the verdict', async () => {
 });
 
 test('intent gate skip-budget falls through to verify (design §3)', async () => {
+  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**"', intent: 'handler' });
@@ -99,6 +104,7 @@ test('intent gate skip-budget falls through to verify (design §3)', async () =>
 });
 
 test('binary=true makes content: predicate fail-to-match', async () => {
+  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'content:"@Controller"' });
@@ -136,6 +142,7 @@ test('contextWindowBytes memoized across rules', async () => {
 });
 
 test('historyEnabled writes verdict + file-summary lines', async () => {
+  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-h-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
