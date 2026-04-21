@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "autoreview",
-      "source": ".",
+      "source": "./",
       "description": "Per-file LLM code review against Markdown rules. Ollama-first, offline, zero npm deps."
     }
   ]
