@@ -24,6 +24,6 @@ export function buildPrompt({ rule, file, diff, mode, evaluate }) {
   const task = `<task>\n${TASK_BODY.replace('{evaluate}', evaluate).replace('{mode}', mode)}\n</task>`;
   const ruleBlock = `<rule id="${rule.id}" name="${rule.frontmatter.name}">\n${rule.body}\n</rule>`;
   const fileBlock = `<file path="${file.path}">\n${file.content}\n</file>`;
-  const diffBlock = diff ? `\n\n<diff>\n${diff}\n</diff>` : '';
+  const diffBlock = `\n\n<diff>\n${diff ?? '(no diff — reviewing file state)'}\n</diff>`;
   return `${task}\n\n${ruleBlock}\n\n${fileBlock}${diffBlock}`;
 }

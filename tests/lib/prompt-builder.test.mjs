@@ -19,11 +19,19 @@ test('quick + diff evaluate mode includes diff tag', () => {
   assert.match(p, /Mode: quick/);
 });
 
-test('no diff omits diff tag', () => {
+test('no diff emits diff tag with placeholder', () => {
   const p = buildPrompt({ rule, file, diff: null, mode: 'thinking', evaluate: 'full' });
-  assert.ok(!p.includes('<diff>'));
+  assert.match(p, /<diff>/);
+  assert.match(p, /no diff — reviewing file state/);
   assert.match(p, /Evaluate: full/);
   assert.match(p, /Mode: thinking/);
+});
+
+test('non-null diff emits diff content unchanged', () => {
+  const p = buildPrompt({ rule, file, diff: '+ added line\n- removed line', mode: 'quick', evaluate: 'diff' });
+  assert.match(p, /<diff>/);
+  assert.match(p, /\+ added line/);
+  assert.match(p, /- removed line/);
 });
 
 test('PROMPT_BOILERPLATE_BYTES roughly matches a rendering', () => {
