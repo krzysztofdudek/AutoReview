@@ -11,7 +11,7 @@ import { buildPrompt } from '../lib/prompt-builder.mjs';
 export async function run(argv, { cwd, env, stdout, stderr }) {
   const { values } = parseArgs(argv);
   if (!values.rule || !values.file) {
-    stderr.write('[error] usage: reviewer-test --rule <id> --file <path> [--provider <name>] [--model <id>] [--mode quick|thinking]\n');
+    stderr.write('[error] usage: reviewer-test --rule <id> --file <path> [--content-file <path>] [--provider <name>] [--model <id>] [--mode quick|thinking]\n');
     return 1;
   }
 
@@ -22,8 +22,10 @@ export async function run(argv, { cwd, env, stdout, stderr }) {
   const rule = rules.find(r => r.id === values.rule);
   if (!rule) { stderr.write(`[error] rule not found: ${values.rule}\n`); return 1; }
 
-  const content = await readFile(values.file, 'utf8').catch(() => null);
-  if (content === null) { stderr.write(`[error] cannot read ${values.file}\n`); return 1; }
+  // --content-file lets agents submit hypothetical content while keeping --file as the logical path.
+  const contentPath = values['content-file'] ?? values.file;
+  const content = await readFile(contentPath, 'utf8').catch(() => null);
+  if (content === null) { stderr.write(`[error] cannot read ${contentPath}\n`); return 1; }
 
   const provider = getProvider(cfg, {
     ruleProvider: values.provider ?? rule.frontmatter.provider,
@@ -32,6 +34,7 @@ export async function run(argv, { cwd, env, stdout, stderr }) {
 
   const mode = values.mode ?? cfg.review.mode;
   const evaluate = cfg.review.evaluate;
+  // Always use values.file as the logical path presented to the reviewer.
   const prompt = buildPrompt({
     rule, file: { path: values.file, content }, diff: null, mode, evaluate,
   });
