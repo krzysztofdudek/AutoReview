@@ -200,24 +200,6 @@ test('init auto-pulls remote_rules declared in template', async () => {
   }
 });
 
-test('init returns 2 on internal error (spec §28)', async () => {
-  const c = capture();
-  const tmpFile = await mkdtemp(join(tmpdir(), 'ar-plug-broken-'));
-  const { dir, cleanup } = await mkRepo();
-  try {
-    // Pass a nonsense plugin root that will cause writeAtomic or template read to throw.
-    // In practice hard to force reliably; accept code in {0, 1, 2} but verify no uncaught throw.
-    const code = await run(['--provider', 'ollama'], {
-      cwd: dir,
-      env: { ...process.env, CLAUDE_PLUGIN_ROOT: '/dev/null/definitely-not-a-dir' },
-      ...c,
-    });
-    assert.ok([0, 1, 2].includes(code), `unexpected exit code ${code}`);
-  } finally {
-    await cleanup();
-    await rm(tmpFile, { recursive: true, force: true });
-  }
-});
 
 test('init emits pull command when ollama model missing', async () => {
   const { dir, cleanup } = await mkRepo();

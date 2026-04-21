@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { create } from '../../../scripts/lib/providers/ollama.mjs';
+import { retryable } from '../../../scripts/lib/http-client.mjs';
 
 function spin(routes) {
   return new Promise(resolve => {
@@ -51,7 +52,11 @@ test('verify handles non-200 as providerError', async () => {
     '/api/generate': (q, r) => { r.writeHead(500); r.end('boom'); },
   });
   try {
-    const p = create({ endpoint: `http://127.0.0.1:${port}`, model: 'x' });
+    const p = create({
+      endpoint: `http://127.0.0.1:${port}`,
+      model: 'x',
+      _retryOptions: { attempts: 2, initialMs: 5, factor: 1, jitterMs: 0, shouldRetry: retryable },
+    });
     const v = await p.verify('p', { maxTokens: 100 });
     assert.equal(v.providerError, true);
   } finally { await close(); }

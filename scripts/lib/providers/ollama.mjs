@@ -14,7 +14,8 @@ export async function ollamaHasModel(endpoint, model) {
   } catch { return false; }
 }
 
-export function create({ endpoint, model }) {
+export function create({ endpoint, model, _retryOptions } = {}) {
+  const retryOpts = _retryOptions ?? { attempts: 3, initialMs: 500, factor: 2, jitterMs: 200, shouldRetry: retryable };
   return {
     name: 'ollama',
     model,
@@ -45,7 +46,7 @@ export function create({ endpoint, model }) {
             }
             return res;
           },
-          { attempts: 3, initialMs: 500, factor: 2, jitterMs: 200, shouldRetry: retryable },
+          retryOpts,
         );
         if (r.status !== 200) return { satisfied: false, providerError: true, raw: r.body };
         const payload = JSON.parse(r.body);
