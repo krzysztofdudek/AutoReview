@@ -2,9 +2,6 @@
 # Worktrees
 .worktrees/
 
-# Docs / planning artifacts (uncommitted per user preference)
-docs/
-
 # Node dependencies
 node_modules/
 
@@ -13,6 +10,10 @@ node_modules/
 .autoreview/config.personal.yaml
 .autoreview/config.secrets.yaml
 .autoreview/runtime/
+
+# Docs working notes (local only, not committed)
+docs/note.md
+docs/superpowers/plans/
 
 # OS-specific
 .DS_Store
