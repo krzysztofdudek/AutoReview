@@ -132,3 +132,38 @@ test('warns when paid provider chosen without API key (§11)', async () => {
     await rm(pluginDir, { recursive: true, force: true });
   }
 });
+
+test('init auto-pulls remote_rules declared in template', async () => {
+  const { dir, cleanup } = await mkRepo();
+  const pluginDir = await mkPluginRoot();
+  // Create a fake local bare remote to clone from
+  const remoteDir = await mkdtemp(join(tmpdir(), 'ar-remote-'));
+  spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: remoteDir });
+  spawnSync('git', ['config', 'user.email', 't@t'], { cwd: remoteDir });
+  spawnSync('git', ['config', 'user.name', 't'], { cwd: remoteDir });
+  await mkdir(join(remoteDir, 'rules'), { recursive: true });
+  await writeFile(join(remoteDir, 'rules/a.md'), '---\nname: A\ntriggers: \'path:"**"\'\n---\nbody');
+  spawnSync('git', ['add', '.'], { cwd: remoteDir });
+  spawnSync('git', ['commit', '-q', '-m', 'init'], { cwd: remoteDir });
+  spawnSync('git', ['tag', 'v1'], { cwd: remoteDir });
+
+  // Replace the plugin's config-repo.yaml template to declare a remote source
+  await writeFile(join(pluginDir, 'templates/config-repo.yaml'),
+    `version: "0.1"\nprovider:\n  active: ollama\nremote_rules:\n  - name: shared\n    url: "${remoteDir}"\n    ref: v1\n    path: rules\n`);
+
+  try {
+    const c = capture();
+    const code = await run(['--provider', 'ollama', '--skip-precommit'], {
+      cwd: dir,
+      env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir },
+      ...c,
+    });
+    assert.equal(code, 0);
+    // Remote rule cache should exist after init
+    await stat(join(dir, '.autoreview/remote_rules/shared/v1/a.md'));
+  } finally {
+    await cleanup();
+    await rm(pluginDir, { recursive: true, force: true });
+    await rm(remoteDir, { recursive: true, force: true });
+  }
+});

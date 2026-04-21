@@ -144,3 +144,20 @@ test('stub error in precommit (soft) context exits 0 with [error]', async () => 
     assert.match(streams.err(), /\[error\]/);
   } finally { await cleanup(); }
 });
+
+test('validate warns when declared remote source is not cached', async () => {
+  const { dir, run: git, cleanup } = await makeRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'remote_rules:\n  - name: missing\n    url: "http://nowhere"\n    ref: v1\n    path: .\n');
+    await writeFile(join(dir, 'a.ts'), 'x');
+    git('add', 'a.ts');
+    const streams = captureStreams();
+    const code = await run(['--scope', 'staged'], {
+      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'pass' }, ...streams,
+    });
+    assert.equal(code, 0);
+    assert.match(streams.err(), /remote source 'missing@v1' has no cache/);
+  } finally { await cleanup(); }
+});

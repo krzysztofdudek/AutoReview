@@ -83,6 +83,16 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   const { entries, warnings } = await resolveScope(scopeArgs);
   for (const w of warnings) stderr.write(`[warn] ${w}\n`);
 
+  // §24: warn if any declared remote source is not on disk (needs pull-remote).
+  for (const source of cfg.remote_rules ?? []) {
+    const { readFileOrNull } = await import('../lib/fs-utils.mjs');
+    const sentinelPath = `${root}/.autoreview/remote_rules/${source.name}/${source.ref}/.autoreview-managed`;
+    const sentinel = await readFileOrNull(sentinelPath);
+    if (!sentinel) {
+      stderr.write(`[warn] remote source '${source.name}@${source.ref}' has no cache — run /autoreview:pull-remote\n`);
+    }
+  }
+
   const stubProvider = stubProviderByEnv(env);
   const resolveProvider = (rule) => stubProvider ?? getProvider(cfg, {
     ruleProvider: rule?.frontmatter?.provider,

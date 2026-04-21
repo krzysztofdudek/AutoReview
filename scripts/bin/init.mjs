@@ -6,6 +6,8 @@ import { parseArgs } from '../lib/args.mjs';
 import { repoRoot, installPrecommit, gitignoreEnsure } from '../lib/git-utils.mjs';
 import { pluginRoot, readFileOrNull } from '../lib/fs-utils.mjs';
 import { request } from '../lib/http-client.mjs';
+import { pullSource } from '../lib/remote-rules-pull.mjs';
+import { parse as parseYaml } from '../lib/yaml-min.mjs';
 
 const KNOWN_PROVIDERS = ['ollama', 'anthropic', 'openai', 'google', 'openai-compat', 'claude-code', 'codex', 'gemini-cli'];
 
@@ -80,6 +82,22 @@ export async function run(argv, { cwd, env, stdout, stderr }) {
   // Inject active provider into the repo template if it's the default.
   const repoConfig = repoTemplate.replace(/provider:\s*\n\s*active:\s*\w[\w-]*/, `provider:\n  active: ${chosen}`);
   await writeFile(join(autoreview, 'config.yaml'), repoConfig);
+
+  // §24: auto-pull declared remote sources so the first review run has a cache.
+  try {
+    const parsed = parseYaml(repoConfig);
+    const sources = parsed?.remote_rules ?? [];
+    for (const source of sources) {
+      try {
+        stdout.write(`pulling remote ${source.name}@${source.ref}...\n`);
+        await pullSource({ repoRoot: root, source, env });
+      } catch (err) {
+        stderr.write(`[warn] remote pull failed for ${source.name}: ${err.message}\n`);
+      }
+    }
+  } catch (err) {
+    stderr.write(`[warn] remote_rules pull skipped: ${err.message}\n`);
+  }
 
   const personalTemplate = await readFileOrNull(join(root_plugin, 'templates/config-personal.yaml'))
     ?? '# Personal overrides. Gitignored.\n';
