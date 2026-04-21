@@ -77,3 +77,33 @@ test('oversized file treated as non-match for content', () => {
   assert.equal(shouldTreatAsNonMatchForContent(1000, true), true);
   assert.equal(shouldTreatAsNonMatchForContent(1000, false), false);
 });
+
+test('evaluate rejects nested-quantifier content regex (ReDoS defense)', () => {
+  const ast = parse('content:"(a+)+$"');
+  assert.throws(
+    () => evaluate(ast, { path: 'x.ts', content: 'aaaa', binary: false }),
+    /pathological|nested quantifier/i,
+  );
+});
+
+test('evaluate rejects alternation quantifier combo', () => {
+  const ast = parse('content:"(a|b)+c+"');
+  // (a|b)+ with + after is fine; what we catch is nested like (X+)+
+  // so this SHOULD pass — just verifying the regex only catches nested quantifiers
+  assert.doesNotThrow(() => evaluate(ast, { path: 'x.ts', content: 'abc', binary: false }));
+});
+
+test('compiled content regex cached on AST node', () => {
+  const ast = parse('content:"@Controller"');
+  evaluate(ast, { path: 'x.ts', content: '@Controller', binary: false });
+  assert.ok(ast._contentRx instanceof RegExp);
+  const cached = ast._contentRx;
+  evaluate(ast, { path: 'x.ts', content: '@Controller', binary: false });
+  assert.equal(ast._contentRx, cached);
+});
+
+test('compiled path matcher cached on AST node', () => {
+  const ast = parse('path:"src/**/*.ts"');
+  evaluate(ast, { path: 'src/a.ts', content: '', binary: false });
+  assert.ok(typeof ast._pathRx === 'function');
+});

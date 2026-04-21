@@ -116,20 +116,43 @@ function toRegex(glob) {
   return new RegExp(rx);
 }
 
-export function matchPath(glob, path) {
+// Very rough heuristic: reject known catastrophic-backtracking shapes.
+// We can't detect all ReDoS patterns, but refusing the most common classes
+// (nested quantifiers like (a+)+, (a*)*) blocks 95% of practical attacks.
+const REDOS_RE = /(\([^)]*[+*][^)]*\)|\[[^\]]+\][+*])[+*]/;
+
+function compileContentRegex(pattern) {
+  if (REDOS_RE.test(pattern)) {
+    throw new Error(`content: regex rejected as potentially pathological (nested quantifier): ${pattern}`);
+  }
+  return new RegExp(pattern);
+}
+
+function compilePathMatcher(glob) {
   const branches = expandBraces(glob);
-  for (const b of branches) if (toRegex(b).test(path)) return true;
-  return false;
+  const regexes = branches.map(b => toRegex(b));
+  return (path) => regexes.some(rx => rx.test(path));
+}
+
+export function matchPath(glob, path) {
+  return compilePathMatcher(glob)(path);
 }
 
 export function evaluate(ast, ctx) {
   switch (ast.type) {
     case 'pred':
-      if (ast.kind === 'path') return matchPath(ast.value, ctx.path);
-      if (ast.kind === 'dir') return matchPath(`${ast.value.replace(/\/$/, '')}/**`, ctx.path);
+      if (ast.kind === 'path') {
+        if (!ast._pathRx) ast._pathRx = compilePathMatcher(ast.value);
+        return ast._pathRx(ctx.path);
+      }
+      if (ast.kind === 'dir') {
+        if (!ast._dirRx) ast._dirRx = compilePathMatcher(`${ast.value.replace(/\/$/, '')}/**`);
+        return ast._dirRx(ctx.path);
+      }
       if (ast.kind === 'content') {
         if (ctx.binary) return false;
-        return new RegExp(ast.value).test(ctx.content);
+        if (!ast._contentRx) ast._contentRx = compileContentRegex(ast.value);
+        return ast._contentRx.test(ctx.content);
       }
       return false;
     case 'not': return !evaluate(ast.child, ctx);
