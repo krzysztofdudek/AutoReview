@@ -35,6 +35,7 @@ Five auto-triggered skills cover the full workflow: `autoreview-setup`, `autorev
 - CLAUDE.md fallback for stdout injection (design §10).
 - Guide skill `--smart` LLM rerank (design §7).
 - CI workflow wiring (`npm test` ready, no GitHub Actions yet).
+- Auto-refresh for remote rules (TTL / background fetch). Currently on-demand via `/autoreview:pull-remote` — review time uses the local disk cache.
 
 ## License
 
