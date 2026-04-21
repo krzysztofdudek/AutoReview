@@ -10,6 +10,7 @@ export { parse as parseTrigger, evaluate as evaluateTrigger, matchPath } from '.
 export { buildPrompt } from './lib/prompt-builder.mjs';
 export { parseResponse } from './lib/response-parser.mjs';
 export { appendVerdict, appendFileSummary } from './lib/history.mjs';
+export { scanSuppressMarkers } from './lib/suppress-parser.mjs';
 export { createIntentGate } from './lib/intent-gate.mjs';
 export { pullSource } from './lib/remote-rules-pull.mjs';
 // Subcommand runners:

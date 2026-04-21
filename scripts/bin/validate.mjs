@@ -133,6 +133,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   });
 
   let hardFailure = false;
+  let rejectCount = 0;
   for (const entry of entries) {
     if (entry.binary && filtered.some(r => /content:/.test(r.frontmatter.triggers))) {
       stderr.write(`[warn] ${entry.path}: binary detected, content: predicates will not match\n`);
@@ -146,10 +147,14 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     });
     reportVerdicts(entry, verdicts, cfg.review.mode, stderr);
     for (const v of verdicts) {
-      if (v.verdict === 'fail') hardFailure = true;
+      if (v.verdict === 'fail') { hardFailure = true; rejectCount++; }
       // Spec §22: provider errors (missing key, unreachable daemon) must NOT block.
       // They already appear as [error] on stderr via reportVerdicts. Never promote to exit 1.
     }
+  }
+
+  if (enforcement === 'soft' && hardFailure) {
+    stderr.write(`[info] review would have blocked under hard enforcement (${rejectCount} rule(s) rejected) — exit 0 per soft mode\n`);
   }
 
   if (enforcement === 'hard' && hardFailure) return 1;

@@ -7,7 +7,7 @@ test('public API exports required symbols', () => {
     'loadConfig', 'loadRules', 'reviewFile',
     'resolveScope', 'getProvider', 'parseTrigger', 'evaluateTrigger',
     'matchPath', 'buildPrompt', 'parseResponse', 'appendVerdict',
-    'createIntentGate', 'pullSource',
+    'createIntentGate', 'pullSource', 'scanSuppressMarkers',
     'runValidate', 'runInit', 'runCreateRule', 'runCheckBreadth',
     'runContext', 'runGuide', 'runPullRemote',
   ];
