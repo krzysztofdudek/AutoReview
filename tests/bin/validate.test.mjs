@@ -92,3 +92,37 @@ test('stub pass: exit 0 with [pass]', async () => {
     assert.match(streams.err(), /\[pass\]/);
   } finally { await cleanup(); }
 });
+
+test('stub error in validate (hard) context exits 1 with [error]', async () => {
+  const { dir, run: git, cleanup } = await makeRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
+    await writeFile(join(dir, 'a.ts'), 'x');
+    git('add', 'a.ts');
+    const streams = captureStreams();
+    const code = await run(['--scope', 'staged'], {
+      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'error' }, ...streams,
+    });
+    assert.equal(code, 1);
+    assert.match(streams.err(), /\[error\]/);
+  } finally { await cleanup(); }
+});
+
+test('stub error in precommit (soft) context exits 0 with [error]', async () => {
+  const { dir, run: git, cleanup } = await makeRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  precommit: soft\n');
+    await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
+    await writeFile(join(dir, 'a.ts'), 'x');
+    git('add', 'a.ts');
+    const streams = captureStreams();
+    const code = await run(['--scope', 'staged', '--context', 'precommit'], {
+      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'error' }, ...streams,
+    });
+    assert.equal(code, 0);
+    assert.match(streams.err(), /\[error\]/);
+  } finally { await cleanup(); }
+});
