@@ -181,7 +181,10 @@ test('suppressed field in provider reply produces suppressed verdict (§27)', as
       },
     });
     assert.equal(res.verdicts[0].verdict, 'suppressed');
-    assert.deepEqual(res.verdicts[0].suppressed, [{ line: 1, reason: 'explain' }]);
+    // suppressed entries now include scope when coming from marker path; provider-supplied suppressed
+    // entries pass through as-is (no scope added). This test uses a provider-supplied suppressed field.
+    assert.equal(res.verdicts[0].suppressed[0].line, 1);
+    assert.equal(res.verdicts[0].suppressed[0].reason, 'explain');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -236,6 +239,39 @@ test('warns once when provider does not support reasoning_effort', async () => {
       assert.match(warns[0], /ollama.*reasoning_effort/);
     } finally { await rm(dir, { recursive: true, force: true }); }
   } finally { console.error = origError; }
+});
+
+test('mid-file @autoreview-ignore marker also suppresses (§27 block/function scope)', async () => {
+  clearContextWindowCache();
+  let providerCalls = 0;
+  const prov = {
+    name: 'stub', model: 'm',
+    verify: async () => { providerCalls++; return { satisfied: true }; },
+    contextWindowBytes: async () => 16384,
+  };
+  const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
+  try {
+    const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**"' });
+    const content = [
+      'const x = 1;',
+      'const y = 2;',
+      'const z = 3;',
+      'const w = 4;',
+      'const v = 5;',
+      'const u = 6;',
+      'const t = 7;',
+      '// @autoreview-ignore r block-level reason',
+      'function thing() { return 42; }',
+    ].join('\n');
+    const res = await reviewFile({
+      repoRoot: dir, config: DEFAULT_CONFIG, rules: [rule],
+      file: { path: 'a.ts', content },
+      diff: null, intentGate: null, historyEnabled: false,
+      _providerOverride: prov,
+    });
+    assert.equal(res.verdicts[0].verdict, 'suppressed');
+    assert.equal(providerCalls, 0);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test('historyEnabled writes verdict + file-summary lines', async () => {

@@ -65,12 +65,15 @@ export async function reviewFile(opts) {
     for (const bad of invalid) {
       console.error(`[warn] @autoreview-ignore at ${file.path}:${bad.line} missing mandatory <reason>`);
     }
-    const fileTopValid = ruleMarkers.find(m => m.scope === 'file-top' && m.valid);
-    if (fileTopValid) {
+    const validMarkers = ruleMarkers.filter(m => m.valid);
+    if (validMarkers.length > 0) {
+      // Spec §27: any honored marker (file-top, function, block) suppresses the rule locally.
+      // Scope is "contextual" per spec — LLM-driven scope narrowing deferred post-MVP;
+      // deterministic path conservatively suppresses for the whole file when an opt-out exists.
       const rec = {
-        rule: rule.id, verdict: 'suppressed', reason: fileTopValid.reason,
+        rule: rule.id, verdict: 'suppressed', reason: validMarkers[0].reason,
         provider: 'local', model: 'marker', mode: 'quick', duration_ms: 0,
-        suppressed: [{ line: fileTopValid.line, reason: fileTopValid.reason }],
+        suppressed: validMarkers.map(m => ({ line: m.line, reason: m.reason, scope: m.scope })),
       };
       verdicts.push(rec);
       matchedVerdicts[rule.id] = 'suppressed';
