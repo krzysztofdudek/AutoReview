@@ -18,3 +18,8 @@ test('public API exports required symbols', () => {
   assert.equal(typeof api.DEFAULT_CONFIG, 'object', 'missing export: DEFAULT_CONFIG');
   assert.ok(api.DEFAULT_CONFIG !== null, 'DEFAULT_CONFIG should not be null');
 });
+
+test('./cli export resolves to autoreview dispatcher', async () => {
+  const cli = await import('../../scripts/bin/autoreview.mjs');
+  assert.equal(typeof cli.run, 'function');
+});

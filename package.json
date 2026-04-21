@@ -11,6 +11,7 @@
   },
   "exports": {
     ".": "./scripts/index.mjs",
+    "./cli": "./scripts/bin/autoreview.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
