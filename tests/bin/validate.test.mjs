@@ -112,7 +112,7 @@ test('stub pass: exit 0 with [pass]', async () => {
   } finally { await cleanup(); }
 });
 
-test('stub error in validate (hard) context exits 1 with [error]', async () => {
+test('stub error in validate (hard) context exits 0 with [error] (spec §22 soft-fail on provider error)', async () => {
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
@@ -124,7 +124,7 @@ test('stub error in validate (hard) context exits 1 with [error]', async () => {
     const code = await run(['--scope', 'staged'], {
       cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'error' }, ...streams,
     });
-    assert.equal(code, 1);
+    assert.equal(code, 0);
     assert.match(streams.err(), /\[error\]/);
   } finally { await cleanup(); }
 });
@@ -210,4 +210,22 @@ test('validate auto-pulls remote when remote_rules_auto_pull: true (§24)', asyn
     await cleanup();
     await rm(remoteDir, { recursive: true, force: true });
   }
+});
+
+test('stub error in validate hard context exits 0 (spec §22 soft-fail on provider error)', async () => {
+  const { dir, run: git, cleanup } = await makeRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/rules/r.md'),
+      `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
+    await writeFile(join(dir, 'a.ts'), 'x');
+    git('add', 'a.ts');
+    const streams = captureStreams();
+    const code = await run(['--scope', 'staged'], {
+      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'error' }, ...streams,
+    });
+    assert.equal(code, 0);
+    assert.match(streams.err(), /\[error\]/);
+  } finally { await cleanup(); }
 });

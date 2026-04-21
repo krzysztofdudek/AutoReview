@@ -146,7 +146,9 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     });
     reportVerdicts(entry, verdicts, cfg.review.mode, stderr);
     for (const v of verdicts) {
-      if (v.verdict === 'fail' || v.verdict === 'error') hardFailure = true;
+      if (v.verdict === 'fail') hardFailure = true;
+      // Spec §22: provider errors (missing key, unreachable daemon) must NOT block.
+      // They already appear as [error] on stderr via reportVerdicts. Never promote to exit 1.
     }
   }
 
