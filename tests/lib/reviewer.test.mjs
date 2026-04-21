@@ -188,12 +188,12 @@ test('suppressed field in provider reply produces suppressed verdict (§27)', as
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('file-top @autoreview-ignore marker suppresses without provider call (§27)', async () => {
+test('valid @autoreview-ignore marker does NOT short-circuit — LLM decides per §27', async () => {
   clearContextWindowCache();
   let providerCalls = 0;
   const prov = {
     name: 'stub', model: 'm',
-    verify: async () => { providerCalls++; return { satisfied: true }; },
+    verify: async () => { providerCalls++; return { satisfied: true, reason: 'ok' }; },
     contextWindowBytes: async () => 16384,
   };
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
@@ -205,9 +205,8 @@ test('file-top @autoreview-ignore marker suppresses without provider call (§27)
       diff: null, intentGate: null, historyEnabled: false,
       _providerOverride: prov,
     });
-    assert.equal(res.verdicts[0].verdict, 'suppressed');
-    assert.equal(providerCalls, 0);
-    assert.equal(res.verdicts[0].suppressed[0].reason, 'explanation here');
+    assert.equal(providerCalls, 1);
+    assert.equal(res.verdicts[0].verdict, 'pass'); // stub returned satisfied:true
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -241,8 +240,11 @@ test('warns once when provider does not support reasoning_effort', async () => {
   } finally { console.error = origError; }
 });
 
-test('mid-file @autoreview-ignore marker also suppresses (§27 block/function scope)', async () => {
+test('invalid marker (missing reason) emits warning but still calls provider', async () => {
   clearContextWindowCache();
+  const origError = console.error;
+  const warns = [];
+  console.error = (s) => warns.push(s);
   let providerCalls = 0;
   const prov = {
     name: 'stub', model: 'm',
@@ -252,26 +254,18 @@ test('mid-file @autoreview-ignore marker also suppresses (§27 block/function sc
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**"' });
-    const content = [
-      'const x = 1;',
-      'const y = 2;',
-      'const z = 3;',
-      'const w = 4;',
-      'const v = 5;',
-      'const u = 6;',
-      'const t = 7;',
-      '// @autoreview-ignore r block-level reason',
-      'function thing() { return 42; }',
-    ].join('\n');
-    const res = await reviewFile({
+    await reviewFile({
       repoRoot: dir, config: DEFAULT_CONFIG, rules: [rule],
-      file: { path: 'a.ts', content },
+      file: { path: 'a.ts', content: '// @autoreview-ignore r\nconst x = 1;' },
       diff: null, intentGate: null, historyEnabled: false,
       _providerOverride: prov,
     });
-    assert.equal(res.verdicts[0].verdict, 'suppressed');
-    assert.equal(providerCalls, 0);
-  } finally { await rm(dir, { recursive: true, force: true }); }
+    assert.equal(providerCalls, 1);
+    assert.ok(warns.some(w => /missing mandatory/.test(w)));
+  } finally {
+    console.error = origError;
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('historyEnabled writes verdict + file-summary lines', async () => {
