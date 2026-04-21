@@ -1,11 +1,19 @@
 ---
 name: autoreview-precheck
-description: Predict whether a hypothetical file (proposed content, not yet written to disk) would pass AutoReview rules. Use BEFORE writing a file to avoid writing code that will fail review. Takes target path + proposed content. Triggered by "would this pass review?", "check before I write", or when drafting content for a new/edited file.
+description: Use when user has drafted file content that is NOT on disk yet and wants a reviewer verdict before writing — explicit phrases like "would this pass review?", "check before I save", "will this be accepted?" with content not yet persisted. Costs 1 LLM call per rule. For plain "I'm about to edit file X", use autoreview-context (free) — don't precheck every edit.
 ---
 
 # AutoReview Pre-check
 
-When you're drafting file content and want to know whether it would pass review BEFORE committing the write:
+Use only when user has a draft in hand and wants a verdict BEFORE writing to disk. For "list rules that apply to this path", use `autoreview-context` instead — it's free.
+
+## When NOT to use
+
+- User said "edit this file". Just run `autoreview-context` to see rules, then write. Precheck is overkill for routine edits.
+- User is about to commit an already-written file. Use `autoreview-review` instead.
+- User already has the content on disk. Use `autoreview-review --files <path>`.
+
+## Steps
 
 1. Save the proposed content to a scratch file: `/tmp/draft-<random>.ts` (or any writable temp path).
 2. Pick a rule that you suspect is the strictest/most relevant for the target path (use `autoreview-context` first to find applicable rules).
@@ -19,4 +27,4 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/reviewer-test.mjs \
 
 4. Parse the `=== RESULT ===` JSON. If `satisfied: false`, revise the draft and re-run. If `satisfied: true`, commit the write to `<target-path>`.
 
-For multiple rules, run once per rule. Each call is ~1 LLM invocation; keep it cheap.
+For multiple rules, run once per rule. Each call is ~1 LLM invocation.
