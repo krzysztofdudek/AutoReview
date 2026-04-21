@@ -37,7 +37,7 @@ export async function run(argv, { cwd, env, stdout, stderr }) {
 
 async function _run(argv, { cwd, env, stdout, stderr }) {
   const { values } = parseArgs(argv, {
-    multiple: ['rule', 'files'],
+    multiple: ['rule', 'files', 'dir'],
     aliases: { r: 'rule', f: 'files', s: 'scope' },
   });
 

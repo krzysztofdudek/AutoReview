@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { makeRepo } from './git-helpers.mjs';
 import { resolveScope } from '../../scripts/lib/scope-resolver.mjs';
@@ -54,6 +54,19 @@ test('staged scope marks text files binary:false', async () => {
     run('add', 'a.ts');
     const { entries } = await resolveScope({ repoRoot: dir, scope: 'staged' });
     assert.equal(entries[0].binary, false);
+  } finally { await cleanup(); }
+});
+
+test('multiple --dir entries walk each directory (§10)', async () => {
+  const { dir: repoD, cleanup } = await makeRepo();
+  try {
+    await mkdir(join(repoD, 'a'), { recursive: true });
+    await mkdir(join(repoD, 'b'), { recursive: true });
+    await writeFile(join(repoD, 'a/x.ts'), 'x');
+    await writeFile(join(repoD, 'b/y.ts'), 'y');
+    const { entries } = await resolveScope({ repoRoot: repoD, dir: ['a', 'b'] });
+    const paths = entries.map(e => e.path).sort();
+    assert.deepEqual(paths, ['a/x.ts', 'b/y.ts']);
   } finally { await cleanup(); }
 });
 

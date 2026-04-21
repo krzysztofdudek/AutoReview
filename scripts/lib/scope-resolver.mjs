@@ -36,7 +36,9 @@ async function readEntries(repoRoot, paths, diffFn) {
 }
 
 export async function resolveScope({ repoRoot, scope = null, sha = null, files = null, dir = null, walkCap = 10000 }) {
-  const modes = [scope, sha, files, dir].filter(x => x != null && x !== false);
+  // Normalize dir: treat single string and array uniformly for mode-count purposes
+  const dirNorm = Array.isArray(dir) ? (dir.length > 0 ? dir : null) : dir;
+  const modes = [scope, sha, files, dirNorm].filter(x => x != null && x !== false);
   if (modes.length > 1) throw new Error('--scope, --sha, --files, --dir are mutually exclusive (pick one)');
   const warnings = [];
   if (sha) {
@@ -68,9 +70,14 @@ export async function resolveScope({ repoRoot, scope = null, sha = null, files =
   if (files) {
     return { entries: await readEntries(repoRoot, files, () => null), warnings };
   }
-  if (dir) {
+  if (dirNorm) {
+    const dirs = Array.isArray(dirNorm) ? dirNorm : [dirNorm];
     const paths = [];
-    for await (const abs of walk({ root: join(repoRoot, dir), cap: walkCap })) paths.push(relative(repoRoot, abs));
+    for (const d of dirs) {
+      for await (const abs of walk({ root: join(repoRoot, d), cap: walkCap })) {
+        paths.push(relative(repoRoot, abs));
+      }
+    }
     return { entries: await readEntries(repoRoot, paths, () => null), warnings };
   }
   throw new Error('one of --scope | --sha | --files | --dir required');
