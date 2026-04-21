@@ -37,7 +37,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   try { root = await repoRoot(cwd); }
   catch { stderr.write('[warn] not a git repo\n'); return 0; }
 
-  const cfg = await loadConfig(root).catch(() => null);
+  const cfg = await loadConfig(root, { env }).catch(() => null);
   if (!cfg) { stderr.write('[warn] autoreview not initialized\n'); return 0; }
 
   const sources = (cfg.remote_rules ?? []).filter(s => !filter || s.name === filter);

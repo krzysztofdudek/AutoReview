@@ -31,7 +31,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
 
   let root;
   try { root = await repoRoot(cwd); } catch { root = cwd; }
-  const cfg = await loadConfig(root).catch(() => DEFAULT_CONFIG);
+  const cfg = await loadConfig(root, { env }).catch(() => DEFAULT_CONFIG);
 
   if (sub === 'breadth') {
     if (!values.expr) { stderr.write('[error] breadth requires --expr\n'); return 1; }

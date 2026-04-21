@@ -137,6 +137,15 @@ test('config rejects remote_rules ref with ..', async () => {
   } finally { await cleanup(); }
 });
 
+test('loadConfig accepts explicit env override', async () => {
+  const { dir, cleanup } = await fixtureRepo({});
+  try {
+    const cfg = await loadConfig(dir, { env: { ANTHROPIC_API_KEY: 'custom-env' } });
+    assert.equal(cfg.secrets.anthropic.api_key, 'custom-env');
+    assert.ok(!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY !== 'custom-env');
+  } finally { await cleanup(); }
+});
+
 test('config rejects remote_rules url starting with dash', async () => {
   const { dir, cleanup } = await fixtureRepo({
     'config.yaml': 'remote_rules:\n  - {name: shared, url: "--evil", ref: v1, path: "."}\n',

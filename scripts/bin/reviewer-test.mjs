@@ -26,7 +26,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
 
   let root;
   try { root = await repoRoot(cwd); } catch { root = cwd; }
-  const cfg = await loadConfig(root).catch(() => DEFAULT_CONFIG);
+  const cfg = await loadConfig(root, { env }).catch(() => DEFAULT_CONFIG);
   const { rules } = await loadRules(root, cfg);
   const rule = rules.find(r => r.id === values.rule);
   if (!rule) { stderr.write(`[error] rule not found: ${values.rule}\n`); return 1; }

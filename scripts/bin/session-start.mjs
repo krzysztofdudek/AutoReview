@@ -22,7 +22,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   if (!cfgRaw) { stderr.write('AutoReview not initialized in this repo\n'); return 0; }
 
   try {
-    const cfg = await loadConfig(cwd);
+    const cfg = await loadConfig(cwd, { env });
     const p = getProvider(cfg, {});
     const avail = await Promise.race([
       p.isAvailable().catch(() => false),

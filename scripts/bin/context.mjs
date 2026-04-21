@@ -23,7 +23,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     // No path given — list all rules
     let root;
     try { root = await repoRoot(cwd); } catch { root = cwd; }
-    const cfg = await loadConfig(root).catch(() => DEFAULT_CONFIG);
+    const cfg = await loadConfig(root, { env }).catch(() => DEFAULT_CONFIG);
     const { rules } = await loadRules(root, cfg);
     if (rules.length === 0) {
       stdout.write('No rules loaded.\n');
@@ -39,7 +39,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
 
   let root;
   try { root = await repoRoot(cwd); } catch { root = cwd; }
-  const cfg = await loadConfig(root).catch(() => DEFAULT_CONFIG);
+  const cfg = await loadConfig(root, { env }).catch(() => DEFAULT_CONFIG);
   const { rules, warnings } = await loadRules(root, cfg);
   for (const w of warnings) stderr.write(`[warn] ${w}\n`);
 

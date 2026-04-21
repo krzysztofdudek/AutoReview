@@ -53,7 +53,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   if (!cfgRaw) { stderr.write('[warn] autoreview not initialized\n'); return 0; }
 
   let cfg;
-  try { cfg = await loadConfig(root); }
+  try { cfg = await loadConfig(root, { env }); }
   catch (err) {
     stderr.write(`[warn] config load failed: ${err.message}\n`);
     return 0;

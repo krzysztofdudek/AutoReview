@@ -92,7 +92,7 @@ function validate(cfg) {
   }
 }
 
-export async function loadConfig(repoRoot) {
+export async function loadConfig(repoRoot, { env = process.env } = {}) {
   const dir = join(repoRoot, '.autoreview');
   const repoCfg = await loadYaml(join(dir, 'config.yaml')) ?? {};
   const personalCfg = await loadYaml(join(dir, 'config.personal.yaml')) ?? {};
@@ -106,16 +106,16 @@ export async function loadConfig(repoRoot) {
     GOOGLE_API_KEY: ['google', 'api_key'],
     OPENAI_COMPAT_API_KEY: ['openai-compat', 'api_key'],
   };
-  for (const [env, [provider, key]] of Object.entries(envMap)) {
-    if (process.env[env]) {
-      merged.secrets[provider] = { ...(merged.secrets[provider] ?? {}), [key]: process.env[env] };
+  for (const [envName, [provider, key]] of Object.entries(envMap)) {
+    if (env[envName]) {
+      merged.secrets[provider] = { ...(merged.secrets[provider] ?? {}), [key]: env[envName] };
     }
   }
   // OLLAMA_HOST: secrets.ollama.host > env OLLAMA_HOST > personal > repo
   if (merged.secrets.ollama?.host) {
     merged.provider.ollama.endpoint = merged.secrets.ollama.host;
-  } else if (process.env.OLLAMA_HOST) {
-    merged.provider.ollama.endpoint = process.env.OLLAMA_HOST;
+  } else if (env.OLLAMA_HOST) {
+    merged.provider.ollama.endpoint = env.OLLAMA_HOST;
   }
   validate(merged);
   return merged;
