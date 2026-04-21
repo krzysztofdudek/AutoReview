@@ -59,6 +59,19 @@ test('parse error carries position', () => {
   catch (e) { assert.ok(e.message.match(/unterminated|position|column|line/i) || e.position !== undefined); }
 });
 
+test('parse dir: predicate', () => {
+  const ast = parse('dir:"src/api"');
+  assert.equal(ast.kind, 'dir');
+  assert.equal(ast.value, 'src/api');
+});
+
+test('evaluate dir: matches files under directory', () => {
+  const ast = parse('dir:"src/api"');
+  assert.equal(evaluate(ast, { path: 'src/api/users.ts', content: '', binary: false }), true);
+  assert.equal(evaluate(ast, { path: 'src/api/nested/x.ts', content: '', binary: false }), true);
+  assert.equal(evaluate(ast, { path: 'src/other/x.ts', content: '', binary: false }), false);
+});
+
 test('oversized file treated as non-match for content', () => {
   assert.equal(shouldTreatAsNonMatchForContent(2_000_000, false), true);
   assert.equal(shouldTreatAsNonMatchForContent(1000, true), true);

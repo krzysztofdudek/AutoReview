@@ -39,7 +39,7 @@ function tokenize(src) {
     const upper = ident.toUpperCase();
     if (upper === 'AND' || upper === 'OR' || upper === 'NOT') {
       toks.push({ type: upper, pos: i });
-    } else if (ident === 'path' || ident === 'content') {
+    } else if (ident === 'path' || ident === 'content' || ident === 'dir') {
       toks.push({ type: 'KIND', value: ident, pos: i });
     } else {
       throw new TriggerParseError(`unknown identifier '${ident}'`, i);
@@ -126,6 +126,7 @@ export function evaluate(ast, ctx) {
   switch (ast.type) {
     case 'pred':
       if (ast.kind === 'path') return matchPath(ast.value, ctx.path);
+      if (ast.kind === 'dir') return matchPath(`${ast.value.replace(/\/$/, '')}/**`, ctx.path);
       if (ast.kind === 'content') {
         if (ctx.binary) return false;
         return new RegExp(ast.value).test(ctx.content);
