@@ -21,6 +21,7 @@ review:
   context_window_bytes: auto
   output_reserve_bytes: 2000
   walk_file_cap: 10000
+  # remote_rules_auto_pull: false  # set to true to auto-pull missing remote rule caches on validate
 
 enforcement:
   precommit: soft

@@ -28,6 +28,7 @@ export const DEFAULT_CONFIG = {
     context_window_bytes: 'auto',
     output_reserve_bytes: 2000,
     walk_file_cap: 10000,
+    remote_rules_auto_pull: false,
   },
   enforcement: { precommit: 'soft', validate: 'hard' },
   context_overrides: {

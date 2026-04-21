@@ -102,13 +102,22 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     entries = scopeResult.entries;
   }
 
-  // §24: warn if any declared remote source is not on disk (needs pull-remote).
+  // §24: warn if any declared remote source is not on disk. Auto-pull if configured.
+  const { pullSource } = await import('../lib/remote-rules-pull.mjs');
   for (const source of cfg.remote_rules ?? []) {
-    const { readFileOrNull } = await import('../lib/fs-utils.mjs');
     const sentinelPath = `${root}/.autoreview/remote_rules/${source.name}/${source.ref}/.autoreview-managed`;
     const sentinel = await readFileOrNull(sentinelPath);
     if (!sentinel) {
-      stderr.write(`[warn] remote source '${source.name}@${source.ref}' has no cache — run /autoreview:pull-remote\n`);
+      if (cfg.review.remote_rules_auto_pull) {
+        try {
+          stderr.write(`[info] auto-pulling remote '${source.name}@${source.ref}'...\n`);
+          await pullSource({ repoRoot: root, source, env });
+        } catch (err) {
+          stderr.write(`[warn] auto-pull failed for ${source.name}: ${err.message}\n`);
+        }
+      } else {
+        stderr.write(`[warn] remote source '${source.name}@${source.ref}' has no cache — run /autoreview:pull-remote or set review.remote_rules_auto_pull: true\n`);
+      }
     }
   }
 
