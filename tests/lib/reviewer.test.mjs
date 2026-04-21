@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { reviewFile, clearContextWindowCache } from '../../scripts/lib/reviewer.mjs';
+import { reviewFile, clearContextWindowCache, clearReasoningWarnings } from '../../scripts/lib/reviewer.mjs';
 import { DEFAULT_CONFIG } from '../../scripts/lib/config-loader.mjs';
 import { parse as parseTrigger } from '../../scripts/lib/trigger-engine.mjs';
 import { buildPrompt } from '../../scripts/lib/prompt-builder.mjs';
@@ -183,6 +183,29 @@ test('suppressed field in provider reply produces suppressed verdict (§27)', as
     assert.equal(res.verdicts[0].verdict, 'suppressed');
     assert.deepEqual(res.verdicts[0].suppressed, [{ line: 1, reason: 'explain' }]);
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('warns once when provider does not support reasoning_effort', async () => {
+  clearContextWindowCache();
+  clearReasoningWarnings();
+  const origError = console.error;
+  const warns = [];
+  console.error = (s) => warns.push(s);
+  try {
+    const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
+    const cfg = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, reasoning_effort: 'high' } };
+    const prov = { name: 'ollama', model: 'x', verify: async () => ({ satisfied: true }), contextWindowBytes: async () => 16384 };
+    const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
+    try {
+      await reviewFile({
+        repoRoot: dir, config: cfg, rules: [rule, rule],
+        file: { path: 'a.ts', content: 'c' }, diff: null, intentGate: null, historyEnabled: false,
+        _providerOverride: prov,
+      });
+      assert.equal(warns.length, 1);
+      assert.match(warns[0], /ollama.*reasoning_effort/);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  } finally { console.error = origError; }
 });
 
 test('historyEnabled writes verdict + file-summary lines', async () => {

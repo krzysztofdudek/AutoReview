@@ -62,6 +62,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   const ctxOverrides = cfg.context_overrides?.[context] ?? {};
   cfg.review = { ...cfg.review, ...ctxOverrides };
   if (values.mode) cfg.review.mode = values.mode;
+  if (values['reasoning-effort']) cfg.review.reasoning_effort = values['reasoning-effort'];
 
   // Design §4 invariant: precommit caps consensus at 1 (spawn budget).
   if (context === 'precommit') cfg.review.consensus = 1;

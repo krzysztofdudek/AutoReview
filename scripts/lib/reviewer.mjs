@@ -14,6 +14,10 @@ function triggersAst(rule) {
   return rule._triggersAst = parseTrigger(rule.frontmatter.triggers);
 }
 
+const REASONING_SUPPORT = new Set(['anthropic', 'openai', 'google', 'openai-compat']);
+const _warnedReasoning = new Set();
+export function clearReasoningWarnings() { _warnedReasoning.clear(); }
+
 const CTX_CACHE = new Map();
 async function resolveContextWindow(config, provider) {
   if (config.review.context_window_bytes !== 'auto') return config.review.context_window_bytes;
@@ -57,6 +61,11 @@ export async function reviewFile(opts) {
       ruleProvider: rule.frontmatter.provider,
       ruleModel: rule.frontmatter.model,
     });
+
+    if (config.review.reasoning_effort && !REASONING_SUPPORT.has(provider.name) && !_warnedReasoning.has(provider.name)) {
+      _warnedReasoning.add(provider.name);
+      console.error(`[warn] provider ${provider.name} does not support reasoning_effort; ignoring for this run`);
+    }
 
     const contextWindowBytes = await resolveContextWindow(config, provider);
     const fit = fitFile({
