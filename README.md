@@ -1,8 +1,8 @@
 # AutoReview
 
-**A rule file is a suggestion. This is the reviewer that turns it into a verdict on every commit.**
+**A rule file is a suggestion. This turns it into a verdict on every commit.**
 
-An LLM reviewer that reads one file at a time and checks it against Markdown rules you wrote in plain English. Runs offline with Ollama by default. Ships as a Claude Code plugin — install, write a rule, commit, done.
+An LLM reviewer that reads one file at a time and checks it against Markdown rules you wrote in plain English. Ships as a Claude Code plugin. Runs offline with Ollama by default.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A520-green.svg)](https://nodejs.org)
@@ -10,19 +10,46 @@ An LLM reviewer that reads one file at a time and checks it against Markdown rul
 
 ---
 
-This is the little sibling of [Yggdrasil](https://github.com/krzysztofdudek/Yggdrasil). Yggdrasil maps your whole codebase into a graph of rules, components, and flows. AutoReview drops everything except the part that made the first version useful: one file, one set of rules, one verdict — every time your agent writes code.
+I built this after getting annoyed at my agent skipping audit logging on a payment mutation for the third time. CLAUDE.md said to emit audit events. Agent read it. Agent skipped it. Tests passed. I only caught it because I happened to diff that specific file.
 
-If you want the architecture graph and cross-file reasoning, use Yggdrasil. If you want "just check this file against these rules, on commit, and shut up when it passes" — AutoReview.
+A rules file is a suggestion. There are no consequences for ignoring it. This is the reviewer that turns it into a rule.
 
 ## The problem
 
-Your agent writes a payment handler. Your CLAUDE.md says "every mutation must emit an audit event." The agent skipped it. Tests pass. Lint passes. You find out in a PR a week later when someone notices no logs.
+You wrote rules in CLAUDE.md. Your agent applies maybe 70% of them. The rest it "optimizes away" because it decided they're noise. You tell it again, it does better for a while. Next session, same thing.
 
-Rule files are suggestions. There is no enforcement loop. Linters don't know what an audit event is, or which layer should never call the database directly, or why this handler needs zod validation.
+Tests pass. Lint passes. But the handler skipped audit logging, called a service it shouldn't, used `Date.now()` in a deterministic module. You find out in a PR with 50 changed files. Or you don't.
 
-## What AutoReview does
+## How AutoReview is different from a regular Claude Code skill
 
-You write rules in plain Markdown under `.autoreview/rules/`. Each rule declares a trigger (glob + content regex) and prose describing what must be true.
+A normal skill is static text injected into the agent's context. "Here's how this library works, use it when relevant." Passive. Informational. The agent can read it and ignore it, same as CLAUDE.md.
+
+AutoReview is not that. It runs an actual reviewer LLM against the code after it's written. The verdict is concrete. Pass or fail per rule. If a rule rejects, the commit blocks.
+
+The skill surface just wires it in. The enforcement happens in the reviewer loop.
+
+| Regular skill | AutoReview |
+|---|---|
+| Text in the agent's context | LLM reviewer against the file |
+| Agent decides if it matters | Verdict per rule |
+| No verification | Verified on every commit |
+| "Hint" | Gate |
+
+## How AutoReview is different from Yggdrasil
+
+This is the little sibling of [Yggdrasil](https://github.com/krzysztofdudek/Yggdrasil). Yggdrasil maps your whole codebase into a graph of rules, components, and flows. AutoReview drops all of that and keeps only the core loop. One file, matching rules, verdict.
+
+| | Yggdrasil | AutoReview |
+|---|---|---|
+| Scope | Cross-file, graph-aware | Per-file only |
+| Setup | Map your codebase | Write a Markdown rule |
+| CI | Hash-based incremental verify | Pre-commit hook or `validate` |
+| Distribution | npm package with CLI | Claude Code plugin with CLI |
+| Deps | Node + a bunch | Node, zero npm deps |
+
+Start here. Graduate to Yggdrasil when you need architecture-wide reasoning.
+
+## What a rule looks like
 
 ```md
 ---
@@ -34,91 +61,66 @@ Reject with HTTP 400 if validation fails.
 Log rejection with correlation-id.
 ```
 
-On every commit, the pre-commit hook sends each staged file + the rules that match it to a reviewer LLM. Verdict per rule: pass, reject, or error. Rejects block the commit (unless you configured soft mode, which prints warnings and moves on).
+Trigger picks the files. Body is the rule in plain English. That's the whole format.
+
+## What happens on commit
 
 ```
-agent writes code
-  → git commit
-  → pre-commit hook runs
-  → matched rules sent to reviewer (Ollama, by default)
-  → [pass] src/api/users.ts :: api/validate-input
-  → [reject] src/api/orders.ts :: api/validate-input
-      reason: charge() mutates state without zod validation (line 42)
-  → commit blocked
-  → agent fixes, re-commits, passes
+git commit
+  ↓
+pre-commit hook
+  ↓
+for each staged file, find rules that match the trigger
+  ↓
+send file + matched rule to reviewer (Ollama by default)
+  ↓
+[pass] src/api/users.ts :: api/validate-input
+[reject] src/api/orders.ts :: api/validate-input
+    reason: charge() mutates state without zod validation (line 42)
+  ↓
+commit blocks on reject (hard mode) or warns (soft mode)
 ```
 
-Triggers are deterministic — no LLM call. Only matched rules get sent to the reviewer. A file with no matching rules is free.
-
-## How it differs from Yggdrasil
-
-| | Yggdrasil | AutoReview |
-|---|---|---|
-| Scope | Cross-file: graph of components + flows | Per-file only |
-| Setup | Map your codebase | Write a Markdown rule |
-| CI | Hash-based incremental verify | Pre-commit hook + explicit `validate` |
-| Distribution | npm package + CLI | Claude Code plugin + optional CLI |
-| Dependencies | Node + yarn + a bunch of deps | Node, zero npm deps |
-| Cost | One model call per file×rule pair | Same, but smaller prompts |
-
-AutoReview is the wedge. Start here, graduate to Yggdrasil when you need architecture-wide reasoning.
+Triggers are deterministic. No LLM call for trigger matching. Only files with matching rules go to the reviewer. No matches, zero cost.
 
 ## Getting started
 
-**1. Install the plugin.**
-
 ```
 /plugin install autoreview
-```
-
-In Claude Code. Requires Node.js 20+ (for the zero-dep stdlib).
-
-**2. Initialize in your repo.**
-
-```
 /autoreview:init --provider ollama --install-precommit
 ```
 
-Scaffolds `.autoreview/` with a config, an example rule, and a git pre-commit hook. For paid providers:
+First command installs the plugin in Claude Code. Second scaffolds `.autoreview/` in your repo and installs the git pre-commit hook. You have to pass `--install-precommit` explicitly. Nothing runs interactively.
+
+For paid providers:
 
 ```
 /autoreview:init --provider anthropic --install-precommit
-# then paste your key into .autoreview/config.secrets.yaml (gitignored)
 ```
 
-**3. Tell the agent what matters.**
+Then paste your key into `.autoreview/config.secrets.yaml`. That file is gitignored.
+
+Write your first rule:
 
 ```
-You:    "All API handlers must validate input with zod."
-Agent:  Runs the 7-step create-rule wizard — proposes the trigger,
-        shows breadth (how many files it matches), test-drives on a
-        sample, then writes the rule file.
+You:    "All command handlers must emit audit events before returning."
+Agent:  Runs the 7-step wizard. Proposes a trigger, shows which files
+        match, test-drives the rule on a sample file, then writes it.
 ```
 
-Or write the rule file directly. It's just Markdown with YAML frontmatter.
+Commit. Hook runs. Done.
 
-**4. Commit.**
-
-```
-$ git commit -m "add user endpoint"
-[warn] provider ollama: reachable
-[pass] src/api/users.ts :: api/validate-input
-[pass] src/api/users.ts :: logging/correlation-id
-```
-
-If a rule rejects in hard mode, commit blocks. In soft mode (default for pre-commit), it warns but lets you through.
-
-**5. Validate on demand.**
+## On-demand review
 
 ```
-/autoreview:validate              # uncommitted files, thinking mode
-/autoreview:validate --scope all  # full repo sweep
-/autoreview:validate --sha HEAD~1 # post-factum: did that commit pass?
+/autoreview:validate              uncommitted files, thinking mode
+/autoreview:validate --scope all  full repo sweep
+/autoreview:validate --sha HEAD~1 did that commit pass?
 ```
 
-## Agent pre-check
+## Pre-check before the agent writes
 
-Before the agent writes a file, it can ask: "would this content pass review?"
+Agent wants to know if a draft would pass before it writes the file to disk:
 
 ```bash
 autoreview validate \
@@ -126,51 +128,50 @@ autoreview validate \
   --target-path src/api/users.ts
 ```
 
-The agent gets a verdict without touching disk. Skill `autoreview-precheck` wraps this for Claude Code.
+No write, verdict returned. Skill `autoreview-precheck` wraps this.
 
-## Modes
+## Providers
 
-- **Quick** — pass/fail only. ~100 tokens out. Default for pre-commit. Used when you want fast gate behavior.
-- **Thinking** — `{satisfied, reason, suppressed[]}` with file:line references and configurable reasoning effort (low/medium/high). Default for manual `/autoreview:validate`.
-
-Per-rule override: a rule can opt into a stronger model or different mode if the convention genuinely needs it.
-
-## Supported providers
-
-**Local (default):** Ollama — offline, free, private. Any 3B–7B coder model works.
+**Local:** Ollama. Default. Offline, free, private.
 
 **API:** Anthropic, OpenAI, Google, any OpenAI-compatible endpoint.
 
-**Agent CLI:** Claude Code, Codex, Gemini CLI — uses an already-authenticated agent binary on your `$PATH` as the reviewer.
+**Agent CLI:** Claude Code, Codex, Gemini CLI. Uses whichever agent binary is on your `$PATH` as the reviewer.
 
-Switching providers is a single config line. Per-rule overrides let you use Haiku for cheap rules and Opus for the one rule that really matters.
+Per-rule override. Cheap model for trivial rules, stronger model for the one that matters.
+
+## Modes
+
+**Quick** is pass/fail only. ~100 tokens out. Default for pre-commit.
+
+**Thinking** returns `{satisfied, reason, suppressed[]}` with file:line references and configurable reasoning effort. Default for manual validate.
 
 ## Inline suppressions
 
-When a rule genuinely shouldn't apply to a specific function or block:
+When a rule genuinely doesn't apply here:
 
 ```ts
 // @autoreview-ignore api/validate-input payload is already schema-validated upstream
 export function passthroughRoute() { /* ... */ }
 ```
 
-Reason is mandatory. The reviewer LLM decides scope based on marker position (file-top → whole file, above a function/block → that span). History logs it as `verdict: 'suppressed'` with the reason so you can audit later.
+Reason is mandatory. The reviewer decides scope from where the marker sits. File top is the whole file, above a function is that function, above a block is that block. History logs it as `verdict: 'suppressed'` with the reason.
 
-The agent is instructed to never write a suppression without your explicit okay.
+Agent is instructed to never write a suppression without your okay.
 
 ## Configuration
 
-Three files, merged in priority order:
+Three files:
 
-- `.autoreview/config.yaml` — committed, team-shared baseline.
-- `.autoreview/config.personal.yaml` — gitignored, per-developer overrides.
-- `.autoreview/config.secrets.yaml` — gitignored, API keys only (env vars also work).
+- `.autoreview/config.yaml` is committed. Team-shared baseline.
+- `.autoreview/config.personal.yaml` is gitignored. Per-developer overrides.
+- `.autoreview/config.secrets.yaml` is gitignored. API keys only.
 
-Common knobs: provider, model, mode, enforcement (soft vs hard) per context, consensus voting, reasoning effort, history toggle, rule enable/disable lists.
+Personal config overrides repo config for any key. Switch provider on your machine, enable intent triggers locally, whatever.
 
-## Remote rule sources
+## Remote rules
 
-Shared rules across repos? Declare a Git URL in config:
+Share rules across repos:
 
 ```yaml
 remote_rules:
@@ -180,45 +181,44 @@ remote_rules:
     path: "rules/"
 ```
 
-`/autoreview:pull-remote` clones the tagged ref into `.autoreview/remote_rules/` on demand. Set `review.remote_rules_auto_pull: true` to refresh on every review run.
+`/autoreview:pull-remote` clones the pinned ref into `.autoreview/remote_rules/`. Set `review.remote_rules_auto_pull: true` to refresh on every review run.
 
 ## Exit codes
 
-Three-state contract:
+- `0` pass, soft-fail, or no matching rules
+- `1` at least one rule rejected under hard enforcement
+- `2` internal tool error, not a rule verdict
 
-- `0` — pass, soft-fail, or no matching rules.
-- `1` — hard fail (at least one rule rejected, enforcement is hard).
-- `2` — internal tool error (crashed, not a rule verdict).
+CI that needs to distinguish crashed-tool from rule-rejected parses stderr. `[reject]` is rule. `[error]` is tool.
 
-CI retry logic that needs to distinguish "tool crashed" from "rule rejected" parses stderr: `[reject]` (rule) vs `[error]` (tool).
+## Soft-fail is non-negotiable
+
+No Ollama running, no API key, no config. Commit still goes through. Warning on stderr, exit 0. This is not configurable. The tool is not allowed to break your workflow because it isn't set up right.
 
 ## FAQ
 
-**How is this different from CLAUDE.md?**
-CLAUDE.md is a text dump sent verbatim into every prompt. Agents ignore 30% of it. AutoReview runs a reviewer LLM against each file and emits a concrete verdict per rule. The gate is verified, not suggested.
+**How is this different from CLAUDE.md or .cursorrules?**
+Those are text dumps. Agent reads them and ignores 30%. AutoReview runs a reviewer LLM against the code and emits a concrete verdict per rule. The gate is verified, not suggested.
 
 **How is this different from a linter?**
-Linters check syntax and AST patterns. "Must emit an audit event before returning" isn't a lint rule. "No direct DB access from this layer" isn't in any AST. AutoReview uses an LLM reviewer against plain-English rules, so the rule language is whatever you can describe.
+Linters check syntax and AST patterns. "Must emit audit event before returning" isn't an AST thing. "No direct DB access from this layer" isn't either. AutoReview's rule language is whatever you can describe in English.
 
 **How is this different from a PR review?**
-PR review catches violations after the agent moved on. AutoReview catches them on commit — the same session the code was written in. Faster feedback, less context loss.
-
-**Does it block my commit if Ollama isn't running?**
-No. Soft-fail on any missing dep (no config, no Ollama, no API key) — warn and exit 0. The commit proceeds. This is non-negotiable; the tool isn't allowed to break your workflow.
+PR review catches violations after the agent moved on. AutoReview catches them on commit, same session. Faster feedback, less context loss.
 
 **What's the cost?**
-With Ollama: zero. With paid APIs: proportional to `(matched-files × matched-rules)`. Quick mode keeps prompts small. Most files match 2–3 rules.
+With Ollama, zero. With paid APIs, proportional to matched files times matched rules. Most files match 2 to 3 rules.
 
 **Can I scope rules to a directory?**
-Yes. `dir:"src/api"` is shorthand for `path:"src/api/**"`. First-class in the trigger grammar.
+Yes. `dir:"src/api"` is shorthand for `path:"src/api/**"`.
 
 **What if I want to stop?**
-Delete `.autoreview/` and the pre-commit hook. No build hooks, no runtime deps, nothing left behind.
+Delete `.autoreview/` and the pre-commit hook. No runtime dependencies, no build hooks, nothing left behind.
 
 ## Docs
 
-- [Functional spec](docs/specification.md) — the 29-point contract.
-- [Implementation design](docs/superpowers/specs/2026-04-20-autoreview-plugin-design.md) — architecture, trade-offs, departures from spec.
+- [Functional spec](docs/specification.md), the 29-point contract.
+- [Implementation design](docs/superpowers/specs/2026-04-20-autoreview-plugin-design.md).
 
 ## License
 
