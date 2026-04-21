@@ -87,8 +87,14 @@ export async function reviewFile(opts) {
     });
     const duration_ms = Date.now() - start;
 
-    const verdict = vote.providerError ? 'error' : (vote.satisfied ? 'pass' : 'fail');
+    const hasSuppressed = Array.isArray(vote.suppressed) && vote.suppressed.length > 0;
+    let verdict;
+    if (vote.providerError) verdict = 'error';
+    else if (vote.satisfied && hasSuppressed) verdict = 'suppressed';
+    else verdict = vote.satisfied ? 'pass' : 'fail';
+
     const rec = { rule: rule.id, verdict, reason: vote.reason ?? null, provider: provider.name, model: provider.model, mode, duration_ms };
+    if (hasSuppressed) rec.suppressed = vote.suppressed;
     verdicts.push(rec);
     matchedVerdicts[rule.id] = verdict;
     if (historyEnabled) await appendVerdict(repoRoot, { file: file.path, ...rec });

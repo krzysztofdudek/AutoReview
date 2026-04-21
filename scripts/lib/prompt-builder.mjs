@@ -10,10 +10,13 @@ Evaluate: {evaluate}
 
 Mode: {mode}
   - quick: output exactly {"satisfied": true|false}
-  - thinking: output exactly {"satisfied": true|false, "reason": "explanation with file:line refs"}
+  - thinking: output exactly {"satisfied": true|false, "reason": "explanation with file:line refs", "suppressed": [{"line": N, "reason": "..."}]}
 
 Honor \`@autoreview-ignore <rule-id> <reason>\` comments in the code — treat suppressed
 code as satisfied. The comment applies contextually (function / class / block / file-top).
+When code contains an honored \`@autoreview-ignore <rule-id> <reason>\` marker, include an
+entry in \`suppressed\` listing each honored span's starting line and the author-provided reason.
+Still set \`satisfied: true\` for the suppressed portion.
 
 Respond with EXACTLY this JSON, nothing else.`;
 

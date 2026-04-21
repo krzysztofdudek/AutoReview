@@ -1,4 +1,4 @@
-const PREFIX = { pass: '[pass]', fail: '[reject]', error: '[error]' };
+const PREFIX = { pass: '[pass]', fail: '[reject]', error: '[error]', suppressed: '[suppressed]' };
 
 export function reportVerdicts(entry, verdicts, mode, stderr) {
   for (const v of verdicts) {

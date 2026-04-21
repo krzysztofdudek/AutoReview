@@ -165,6 +165,26 @@ test('per-rule frontmatter.evaluate overrides global evaluate (§20)', async () 
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('suppressed field in provider reply produces suppressed verdict (§27)', async () => {
+  clearContextWindowCache();
+  const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
+  try {
+    const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
+    const res = await reviewFile({
+      repoRoot: dir, config: DEFAULT_CONFIG, rules: [rule],
+      file: { path: 'a.ts', content: '// @autoreview-ignore r explain' },
+      diff: null, intentGate: null, historyEnabled: false,
+      _providerOverride: {
+        name: 'stub', model: 'm',
+        verify: async () => ({ satisfied: true, reason: 'ok', suppressed: [{ line: 1, reason: 'explain' }] }),
+        contextWindowBytes: async () => 16384,
+      },
+    });
+    assert.equal(res.verdicts[0].verdict, 'suppressed');
+    assert.deepEqual(res.verdicts[0].suppressed, [{ line: 1, reason: 'explain' }]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('historyEnabled writes verdict + file-summary lines', async () => {
   clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-h-'));

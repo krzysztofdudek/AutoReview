@@ -63,5 +63,5 @@ function balancedObject(s, start) {
 
 function normalize(obj, raw) {
   if (typeof obj !== 'object' || obj === null) return { satisfied: false, providerError: true, raw };
-  return { satisfied: !!obj.satisfied, reason: obj.reason };
+  return { satisfied: !!obj.satisfied, reason: obj.reason, suppressed: obj.suppressed };
 }

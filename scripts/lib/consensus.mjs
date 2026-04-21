@@ -13,5 +13,5 @@ export async function voteConsensus(provider, prompt, { consensus, maxTokens, re
   const falses = good.filter(r => !r.satisfied);
   const winners = trues.length >= falses.length ? trues : falses;
   const winner = winners[0];
-  return { satisfied: winner.satisfied, reason: winner.reason, votes: consensus };
+  return { satisfied: winner.satisfied, reason: winner.reason, suppressed: winner.suppressed, votes: consensus };
 }
