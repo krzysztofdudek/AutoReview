@@ -5,6 +5,7 @@ import { buildPrompt } from './prompt-builder.mjs';
 import { fitFile } from './chunker.mjs';
 import { voteConsensus } from './consensus.mjs';
 import { appendVerdict, appendFileSummary } from './history.mjs';
+import { scanSuppressMarkers } from './suppress-parser.mjs';
 
 function resolveMode(config) { return config.review.mode; }
 function resolveEvaluate(config, rule) { return rule?.frontmatter?.evaluate ?? config.review.evaluate; }
@@ -56,6 +57,26 @@ export async function reviewFile(opts) {
     }
 
     matched.push(rule.id);
+
+    // §27: deterministic @autoreview-ignore marker check before provider call
+    const markers = scanSuppressMarkers(file.content);
+    const ruleMarkers = markers.filter(m => m.ruleId === rule.id);
+    const invalid = ruleMarkers.filter(m => !m.valid);
+    for (const bad of invalid) {
+      console.error(`[warn] @autoreview-ignore at ${file.path}:${bad.line} missing mandatory <reason>`);
+    }
+    const fileTopValid = ruleMarkers.find(m => m.scope === 'file-top' && m.valid);
+    if (fileTopValid) {
+      const rec = {
+        rule: rule.id, verdict: 'suppressed', reason: fileTopValid.reason,
+        provider: 'local', model: 'marker', mode: 'quick', duration_ms: 0,
+        suppressed: [{ line: fileTopValid.line, reason: fileTopValid.reason }],
+      };
+      verdicts.push(rec);
+      matchedVerdicts[rule.id] = 'suppressed';
+      if (historyEnabled) await appendVerdict(repoRoot, { file: file.path, ...rec });
+      continue;
+    }
 
     const provider = _providerOverride ?? getProvider(config, {
       ruleProvider: rule.frontmatter.provider,

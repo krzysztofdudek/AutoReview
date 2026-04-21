@@ -185,6 +185,36 @@ test('suppressed field in provider reply produces suppressed verdict (§27)', as
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('file-top @autoreview-ignore marker suppresses without provider call (§27)', async () => {
+  clearContextWindowCache();
+  let providerCalls = 0;
+  const prov = {
+    name: 'stub', model: 'm',
+    verify: async () => { providerCalls++; return { satisfied: true }; },
+    contextWindowBytes: async () => 16384,
+  };
+  const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
+  try {
+    const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**"' });
+    const res = await reviewFile({
+      repoRoot: dir, config: DEFAULT_CONFIG, rules: [rule],
+      file: { path: 'a.ts', content: '// @autoreview-ignore r explanation here\nconst x = 1;' },
+      diff: null, intentGate: null, historyEnabled: false,
+      _providerOverride: prov,
+    });
+    assert.equal(res.verdicts[0].verdict, 'suppressed');
+    assert.equal(providerCalls, 0);
+    assert.equal(res.verdicts[0].suppressed[0].reason, 'explanation here');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('scanSuppressMarkers rejects markers missing reason', async () => {
+  const { scanSuppressMarkers } = await import('../../scripts/lib/suppress-parser.mjs');
+  const m = scanSuppressMarkers('// @autoreview-ignore r\nconst x = 1;');
+  assert.equal(m.length, 1);
+  assert.equal(m[0].valid, false);
+});
+
 test('warns once when provider does not support reasoning_effort', async () => {
   clearContextWindowCache();
   clearReasoningWarnings();
