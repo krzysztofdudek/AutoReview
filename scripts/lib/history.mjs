@@ -66,3 +66,36 @@ export async function appendVerdict(repoRoot, record) {
 export async function appendFileSummary(repoRoot, record) {
   await append(repoRoot, { type: 'file-summary', ...record });
 }
+
+export function createHistorySession(repoRoot) {
+  const streams = new Map(); // day -> writable stream
+  let closed = false;
+
+  async function getStream(day) {
+    if (streams.has(day)) return streams.get(day);
+    const { createWriteStream } = await import('node:fs');
+    const { mkdir: mkdirAsync } = await import('node:fs/promises');
+    await mkdirAsync(join(repoRoot, '.autoreview/.history'), { recursive: true });
+    const s = createWriteStream(join(repoRoot, '.autoreview/.history', `${day}.jsonl`), { flags: 'a' });
+    streams.set(day, s);
+    return s;
+  }
+
+  return {
+    async append(rec) {
+      if (closed) throw new Error('history session closed');
+      const { line, day } = await fitRecord(repoRoot, rec);
+      const s = await getStream(day);
+      await new Promise((resolve, reject) => {
+        s.write(line + '\n', err => err ? reject(err) : resolve());
+      });
+    },
+    async close() {
+      closed = true;
+      for (const s of streams.values()) {
+        await new Promise(resolve => s.end(resolve));
+      }
+      streams.clear();
+    },
+  };
+}

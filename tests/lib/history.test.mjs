@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { appendVerdict, appendFileSummary, MAX_RECORD_BYTES } from '../../scripts/lib/history.mjs';
+import { appendVerdict, appendFileSummary, createHistorySession, MAX_RECORD_BYTES } from '../../scripts/lib/history.mjs';
 
 test('appendVerdict writes JSONL line', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ar-hist-'));
@@ -56,5 +56,20 @@ test('appendFileSummary writes type:file-summary', async () => {
     const body = await readFile(join(dir, '.autoreview/.history', `${day}.jsonl`), 'utf8');
     const rec = JSON.parse(body.trim());
     assert.equal(rec.type, 'file-summary');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('createHistorySession keeps one stream open per day', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-hist-sess-'));
+  try {
+    const s = createHistorySession(dir);
+    await s.append({ type: 'verdict', file: 'a.ts', rule: 'r1', verdict: 'pass', ts: '2026-04-21T10:00:00Z' });
+    await s.append({ type: 'verdict', file: 'b.ts', rule: 'r1', verdict: 'pass', ts: '2026-04-21T10:01:00Z' });
+    await s.close();
+    const body = await readFile(join(dir, '.autoreview/.history/2026-04-21.jsonl'), 'utf8');
+    const lines = body.trim().split('\n');
+    assert.equal(lines.length, 2);
+    assert.equal(JSON.parse(lines[0]).file, 'a.ts');
+    assert.equal(JSON.parse(lines[1]).file, 'b.ts');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

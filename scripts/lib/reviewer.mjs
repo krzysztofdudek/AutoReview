@@ -29,7 +29,7 @@ async function resolveContextWindow(config, provider, _state) {
 export async function reviewFile(opts) {
   const {
     repoRoot, config, rules, file, diff,
-    intentGate, historyEnabled,
+    intentGate, historyEnabled, historyAppend,
     _providerOverride = null,
   } = opts;
   const _state = opts._state ?? { ctxCache: new Map(), warnedReasoning: new Set() };
@@ -87,7 +87,8 @@ export async function reviewFile(opts) {
       const v = { rule: rule.id, verdict: 'error', reason: `skip: ${fit.reason}`, provider: provider.name, model: provider.model, mode: resolveMode(config), duration_ms: 0 };
       verdicts.push(v);
       matchedVerdicts[rule.id] = v.verdict;
-      if (historyEnabled) await appendVerdict(repoRoot, { file: file.path, ...v });
+      if (historyAppend) await historyAppend({ type: 'verdict', file: file.path, ...v });
+      else if (historyEnabled) await appendVerdict(repoRoot, { file: file.path, ...v });
       continue;
     }
 
@@ -120,7 +121,8 @@ export async function reviewFile(opts) {
     }
     verdicts.push(rec);
     matchedVerdicts[rule.id] = verdict;
-    if (historyEnabled) await appendVerdict(repoRoot, { file: file.path, ...rec });
+    if (historyAppend) await historyAppend({ type: 'verdict', file: file.path, ...rec });
+    else if (historyEnabled) await appendVerdict(repoRoot, { file: file.path, ...rec });
   }
 
   const summary = {
@@ -129,6 +131,7 @@ export async function reviewFile(opts) {
     verdicts: matchedVerdicts,
     duration_ms: verdicts.reduce((s, v) => s + v.duration_ms, 0),
   };
-  if (historyEnabled) await appendFileSummary(repoRoot, summary);
+  if (historyAppend) await historyAppend({ type: 'file-summary', ...summary });
+  else if (historyEnabled) await appendFileSummary(repoRoot, summary);
   return { verdicts, summary };
 }

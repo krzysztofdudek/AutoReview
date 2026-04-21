@@ -9,6 +9,7 @@ import { reviewFile } from '../lib/reviewer.mjs';
 import { getProvider } from '../lib/provider-client.mjs';
 import { createIntentGate } from '../lib/intent-gate.mjs';
 import { reportVerdicts } from '../lib/report.mjs';
+import { createHistorySession } from '../lib/history.mjs';
 
 function stubProviderByEnv(env) {
   const mode = env.AUTOREVIEW_STUB_PROVIDER;
@@ -132,6 +133,8 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     onBudgetExhausted: () => stderr.write('[warn] intent budget exhausted — remaining rules evaluated against Layer 1 only\n'),
   });
 
+  const historySession = cfg.history.log_to_file ? createHistorySession(root) : null;
+
   let hardFailure = false;
   let rejectCount = 0;
   const reviewState = { ctxCache: new Map(), warnedReasoning: new Set() };
@@ -143,7 +146,9 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
       repoRoot: root, config: cfg, rules: filtered,
       file: { path: entry.path, content: entry.content, binary: entry.binary },
       diff: entry.diff,
-      intentGate, historyEnabled: cfg.history.log_to_file,
+      intentGate,
+      historyEnabled: cfg.history.log_to_file,
+      historyAppend: historySession ? rec => historySession.append(rec) : null,
       _providerOverride: stubProvider,
       _state: reviewState,
     });
@@ -154,6 +159,8 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
       // They already appear as [error] on stderr via reportVerdicts. Never promote to exit 1.
     }
   }
+
+  if (historySession) await historySession.close();
 
   if (enforcement === 'soft' && hardFailure) {
     stderr.write(`[info] review would have blocked under hard enforcement (${rejectCount} rule(s) rejected) — exit 0 per soft mode\n`);
