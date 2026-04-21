@@ -98,7 +98,7 @@ test('.gitignore appended without duplicates', async () => {
     const c2 = capture();
     await run(['--provider', 'ollama', '--upgrade'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir, }, ...c2 });
     const body = await readFile(join(dir, '.gitignore'), 'utf8');
-    assert.equal((body.match(/\.autoreview\/history\//g) || []).length, 1);
+    assert.equal((body.match(/\.autoreview\/\.history\//g) || []).length, 1);
   } finally {
     await cleanup();
     await rm(pluginDir, { recursive: true, force: true });
@@ -113,4 +113,22 @@ test('errors on unknown provider', async () => {
     assert.equal(code, 1);
     assert.match(c.err(), /unknown provider/);
   } finally { await cleanup(); }
+});
+
+test('warns when paid provider chosen without API key (§11)', async () => {
+  const { dir, cleanup } = await mkRepo();
+  const pluginDir = await mkPluginRoot();
+  try {
+    const c = capture();
+    const code = await run(['--provider', 'anthropic'], {
+      cwd: dir,
+      env: { ...process.env, ANTHROPIC_API_KEY: '', CLAUDE_PLUGIN_ROOT: pluginDir },
+      ...c,
+    });
+    assert.equal(code, 0);
+    assert.match(c.err(), /requires an API key/i);
+  } finally {
+    await cleanup();
+    await rm(pluginDir, { recursive: true, force: true });
+  }
 });

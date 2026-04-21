@@ -61,6 +61,18 @@ export async function run(argv, { cwd, env, stdout, stderr }) {
     return 1;
   }
 
+  // Step 4b: warn if paid provider chosen without API key
+  const PAID_PROVIDERS = ['anthropic', 'openai', 'google', 'openai-compat'];
+  const ENV_KEYS = {
+    anthropic: 'ANTHROPIC_API_KEY',
+    openai: 'OPENAI_API_KEY',
+    google: 'GOOGLE_API_KEY',
+    'openai-compat': 'OPENAI_COMPAT_API_KEY',
+  };
+  if (PAID_PROVIDERS.includes(chosen) && !env[ENV_KEYS[chosen]]) {
+    stderr.write(`[warn] ${chosen} requires an API key. Set ${ENV_KEYS[chosen]} in your environment or add it to .autoreview/config.secrets.yaml (file is gitignored).\n`);
+  }
+
   // Step 5-7: write config files from templates
   const root_plugin = pluginRoot(import.meta.url, env);
   const repoTemplate = await readFileOrNull(join(root_plugin, 'templates/config-repo.yaml'))
