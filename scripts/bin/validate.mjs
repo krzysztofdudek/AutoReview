@@ -10,6 +10,9 @@ import { getProvider } from '../lib/provider-client.mjs';
 import { createIntentGate } from '../lib/intent-gate.mjs';
 import { reportVerdicts } from '../lib/report.mjs';
 import { createHistorySession } from '../lib/history.mjs';
+import { readFileOrNull, isBinary } from '../lib/fs-utils.mjs';
+import { readFile } from 'node:fs/promises';
+import { pullSource } from '../lib/remote-rules-pull.mjs';
 
 function stubProviderByEnv(env) {
   const mode = env.AUTOREVIEW_STUB_PROVIDER;
@@ -48,7 +51,6 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
 
   // Check if .autoreview exists before trying to load
   const cfgPath = `${root}/.autoreview/config.yaml`;
-  const { readFileOrNull } = await import('../lib/fs-utils.mjs');
   const cfgRaw = await readFileOrNull(cfgPath);
   if (!cfgRaw) { stderr.write('[warn] autoreview not initialized\n'); return 0; }
 
@@ -77,8 +79,6 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   // §15: hypothetical pre-check — content from disk scratch file, logical path supplied.
   let entries;
   if (values['content-file'] && values['target-path']) {
-    const { readFile } = await import('node:fs/promises');
-    const { isBinary } = await import('../lib/fs-utils.mjs');
     const buf = await readFile(values['content-file']).catch(() => null);
     if (!buf) { stderr.write(`[error] cannot read ${values['content-file']}\n`); return 1; }
     const content = buf.toString('utf8');
@@ -104,7 +104,6 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   }
 
   // §24: warn if any declared remote source is not on disk. Auto-pull if configured.
-  const { pullSource } = await import('../lib/remote-rules-pull.mjs');
   for (const source of cfg.remote_rules ?? []) {
     const sentinelPath = `${root}/.autoreview/remote_rules/${source.name}/${source.ref}/.autoreview-managed`;
     const sentinel = await readFileOrNull(sentinelPath);
