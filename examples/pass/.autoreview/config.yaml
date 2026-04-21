@@ -1,0 +1,9 @@
+version: "0.1"
+provider:
+  active: ollama
+  ollama: { endpoint: "http://localhost:11434", model: "qwen2.5-coder:7b" }
+review:
+  evaluate: full
+  mode: quick
+enforcement:
+  validate: hard
