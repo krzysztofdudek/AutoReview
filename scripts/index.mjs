@@ -3,7 +3,7 @@
 
 export { loadConfig, DEFAULT_CONFIG } from './lib/config-loader.mjs';
 export { loadRules } from './lib/rule-loader.mjs';
-export { reviewFile, clearContextWindowCache } from './lib/reviewer.mjs';
+export { reviewFile } from './lib/reviewer.mjs';
 export { resolveScope } from './lib/scope-resolver.mjs';
 export { getProvider, clearProviderCache } from './lib/provider-client.mjs';
 export { parse as parseTrigger, evaluate as evaluateTrigger, matchPath } from './lib/trigger-engine.mjs';

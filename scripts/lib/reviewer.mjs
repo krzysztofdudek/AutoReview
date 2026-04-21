@@ -16,19 +16,15 @@ function triggersAst(rule) {
 }
 
 const REASONING_SUPPORT = new Set(['anthropic', 'openai', 'google', 'openai-compat']);
-const _warnedReasoning = new Set();
-export function clearReasoningWarnings() { _warnedReasoning.clear(); }
 
-const CTX_CACHE = new Map();
-async function resolveContextWindow(config, provider) {
+async function resolveContextWindow(config, provider, _state) {
   if (config.review.context_window_bytes !== 'auto') return config.review.context_window_bytes;
   const key = `${provider.name}|${provider.model}`;
-  if (CTX_CACHE.has(key)) return CTX_CACHE.get(key);
+  if (_state.ctxCache.has(key)) return _state.ctxCache.get(key);
   const bytes = provider.contextWindowBytes ? await provider.contextWindowBytes() : 16384;
-  CTX_CACHE.set(key, bytes);
+  _state.ctxCache.set(key, bytes);
   return bytes;
 }
-export function clearContextWindowCache() { CTX_CACHE.clear(); }
 
 export async function reviewFile(opts) {
   const {
@@ -36,6 +32,7 @@ export async function reviewFile(opts) {
     intentGate, historyEnabled,
     _providerOverride = null,
   } = opts;
+  const _state = opts._state ?? { ctxCache: new Map(), warnedReasoning: new Set() };
 
   const verdicts = [];
   const matched = [];
@@ -74,12 +71,12 @@ export async function reviewFile(opts) {
       ruleModel: rule.frontmatter.model,
     });
 
-    if (config.review.reasoning_effort && !REASONING_SUPPORT.has(provider.name) && !_warnedReasoning.has(provider.name)) {
-      _warnedReasoning.add(provider.name);
+    if (config.review.reasoning_effort && !REASONING_SUPPORT.has(provider.name) && !_state.warnedReasoning.has(provider.name)) {
+      _state.warnedReasoning.add(provider.name);
       console.error(`[warn] provider ${provider.name} does not support reasoning_effort; ignoring for this run`);
     }
 
-    const contextWindowBytes = await resolveContextWindow(config, provider);
+    const contextWindowBytes = await resolveContextWindow(config, provider, _state);
     const fit = fitFile({
       fileContent: file.content, rule, diff,
       contextWindowBytes,

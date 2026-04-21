@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { reviewFile, clearContextWindowCache, clearReasoningWarnings } from '../../scripts/lib/reviewer.mjs';
+import { reviewFile } from '../../scripts/lib/reviewer.mjs';
 import { DEFAULT_CONFIG } from '../../scripts/lib/config-loader.mjs';
 import { parse as parseTrigger } from '../../scripts/lib/trigger-engine.mjs';
 import { buildPrompt } from '../../scripts/lib/prompt-builder.mjs';
@@ -26,7 +26,6 @@ function makeRule({ id, name, triggers, body, provider = null, model = null, int
 }
 
 test('file matches rule, provider says pass', async () => {
-  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
@@ -43,7 +42,6 @@ test('file matches rule, provider says pass', async () => {
 });
 
 test('rule does not match — no verdict recorded', async () => {
-  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"src/api/**"' });
@@ -58,7 +56,6 @@ test('rule does not match — no verdict recorded', async () => {
 });
 
 test('providerError yields error verdict', async () => {
-  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**"' });
@@ -72,7 +69,6 @@ test('providerError yields error verdict', async () => {
 });
 
 test('intent gate skip-no drops the verdict', async () => {
-  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**"', intent: 'handler' });
@@ -88,7 +84,6 @@ test('intent gate skip-no drops the verdict', async () => {
 });
 
 test('intent gate skip-budget falls through to verify (design §3)', async () => {
-  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**"', intent: 'handler' });
@@ -105,7 +100,6 @@ test('intent gate skip-budget falls through to verify (design §3)', async () =>
 });
 
 test('binary=true makes content: predicate fail-to-match', async () => {
-  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'content:"@Controller"' });
@@ -120,7 +114,6 @@ test('binary=true makes content: predicate fail-to-match', async () => {
 });
 
 test('contextWindowBytes memoized across rules', async () => {
-  clearContextWindowCache();
   let calls = 0;
   const prov = {
     name: 'stub', model: 'm',
@@ -143,7 +136,6 @@ test('contextWindowBytes memoized across rules', async () => {
 });
 
 test('per-rule frontmatter.evaluate overrides global evaluate (§20)', async () => {
-  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     // Global default is 'diff'; rule overrides to 'full'
@@ -166,7 +158,6 @@ test('per-rule frontmatter.evaluate overrides global evaluate (§20)', async () 
 });
 
 test('suppressed field in provider reply produces suppressed verdict (§27)', async () => {
-  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
@@ -189,7 +180,6 @@ test('suppressed field in provider reply produces suppressed verdict (§27)', as
 });
 
 test('valid @autoreview-ignore marker does NOT short-circuit — LLM decides per §27', async () => {
-  clearContextWindowCache();
   let providerCalls = 0;
   const prov = {
     name: 'stub', model: 'm',
@@ -218,8 +208,6 @@ test('scanSuppressMarkers rejects markers missing reason', async () => {
 });
 
 test('warns once when provider does not support reasoning_effort', async () => {
-  clearContextWindowCache();
-  clearReasoningWarnings();
   const origError = console.error;
   const warns = [];
   console.error = (s) => warns.push(s);
@@ -241,7 +229,6 @@ test('warns once when provider does not support reasoning_effort', async () => {
 });
 
 test('invalid marker (missing reason) emits warning but still calls provider', async () => {
-  clearContextWindowCache();
   const origError = console.error;
   const warns = [];
   console.error = (s) => warns.push(s);
@@ -290,7 +277,6 @@ test('scope_hint from parser enriches suppressed records when line matches', asy
 });
 
 test('historyEnabled writes verdict + file-summary lines', async () => {
-  clearContextWindowCache();
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-h-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });

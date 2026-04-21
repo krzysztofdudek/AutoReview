@@ -134,6 +134,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
 
   let hardFailure = false;
   let rejectCount = 0;
+  const reviewState = { ctxCache: new Map(), warnedReasoning: new Set() };
   for (const entry of entries) {
     if (entry.binary && filtered.some(r => /content:/.test(r.frontmatter.triggers))) {
       stderr.write(`[warn] ${entry.path}: binary detected, content: predicates will not match\n`);
@@ -144,6 +145,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
       diff: entry.diff,
       intentGate, historyEnabled: cfg.history.log_to_file,
       _providerOverride: stubProvider,
+      _state: reviewState,
     });
     reportVerdicts(entry, verdicts, cfg.review.mode, stderr);
     for (const v of verdicts) {
