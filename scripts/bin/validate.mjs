@@ -88,7 +88,11 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     ruleProvider: rule?.frontmatter?.provider,
     ruleModel: rule?.frontmatter?.model,
   });
-  const intentGate = createIntentGate({ resolveProvider, budget: cfg.review.intent_trigger_budget });
+  const intentGate = createIntentGate({
+    resolveProvider,
+    budget: cfg.review.intent_trigger_budget,
+    onBudgetExhausted: () => stderr.write('[warn] intent budget exhausted — remaining rules evaluated against Layer 1 only\n'),
+  });
 
   let hardFailure = false;
   for (const entry of entries) {

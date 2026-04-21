@@ -82,6 +82,22 @@ test('intent gate skip-no drops the verdict', async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('intent gate skip-budget falls through to verify (design §3)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
+  try {
+    const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**"', intent: 'handler' });
+    const cfg = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, intent_triggers: true } };
+    const gate = { check: async () => 'skip-budget' };
+    const res = await reviewFile({
+      repoRoot: dir, config: cfg, rules: [rule],
+      file: { path: 'x.ts', content: 'code' }, diff: null, intentGate: gate, historyEnabled: false,
+      _providerOverride: stubProviderClient({ satisfied: true, reason: 'ok' }),
+    });
+    assert.equal(res.verdicts.length, 1);
+    assert.equal(res.verdicts[0].verdict, 'pass');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('binary=true makes content: predicate fail-to-match', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {

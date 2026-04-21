@@ -46,7 +46,9 @@ export async function reviewFile(opts) {
 
     if (rule.frontmatter.intent && config.review.intent_triggers && intentGate) {
       const intentResult = await intentGate.check(rule, file.path, file.content);
-      if (intentResult !== 'match') continue;
+      if (intentResult === 'skip-no') continue;
+      // skip-budget: fall through to Layer 3 verify per design §3
+      // (caller emits the one-time warning via onBudgetExhausted)
     }
 
     matched.push(rule.id);

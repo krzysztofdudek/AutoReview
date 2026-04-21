@@ -42,6 +42,20 @@ test('budget exhausted returns skip-budget', async () => {
   assert.equal(gate.stats().skipped, 1);
 });
 
+test('budget exhausted triggers onBudgetExhausted once', async () => {
+  const prov = stubProvider([{ satisfied: false, reason: 'yes' }]);
+  let warns = 0;
+  const gate = createIntentGate({
+    resolveProvider: () => prov,
+    budget: 1,
+    onBudgetExhausted: () => { warns++; },
+  });
+  await gate.check(rule, 'a.ts', 'c1');
+  await gate.check(rule, 'b.ts', 'c2');
+  await gate.check(rule, 'c.ts', 'c3');
+  assert.equal(warns, 1);
+});
+
 test('resolveProvider invoked per rule', async () => {
   const ruleProviders = new Map();
   const gate = createIntentGate({
