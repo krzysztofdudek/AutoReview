@@ -2,14 +2,17 @@
 
 This project has one AutoReview rule. The committed code satisfies it.
 
-```bash
-cd examples/pass
-git init
-git add .
-git commit -m "initial" --no-verify   # skip precommit to get into git
-cp -r ../../scripts/lib .autoreview/runtime/lib
-cp ../../scripts/bin/validate.mjs .autoreview/runtime/bin/
-node .autoreview/runtime/bin/validate.mjs --scope all
+**Prerequisite:** Ollama running on localhost:11434 with `qwen2.5-coder:7b` pulled:
+```
+ollama serve &
+ollama pull qwen2.5-coder:7b
 ```
 
-Expected output: `[pass] src/handler.ts :: example/non-empty`.
+**Run:**
+```
+bash run.sh
+```
+
+Expected: `[pass] src/handler.ts :: example/non-empty`.
+
+To use a cloud provider instead, edit `.autoreview/config.yaml` and set `provider.active` + add a key.
