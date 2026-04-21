@@ -28,7 +28,30 @@ function score(rule, qTokens) {
   return (3 * nameHits + 2 * descHits + bodyHits) / Math.max(1, qTokens.length);
 }
 
-export async function run(argv, { cwd, env, stdout, stderr }) {
+function extractLinkedPaths(body) {
+  const out = new Set();
+  // Markdown links: [text](path)
+  for (const m of body.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+    const p = m[1].trim();
+    if (p && !p.startsWith('http') && !p.startsWith('#')) out.add(p);
+  }
+  // Backtick-quoted paths ending in common source extensions
+  for (const m of body.matchAll(/`([^`]+\.(?:ts|js|py|go|rs|java|rb|mjs|cjs))`/g)) {
+    out.add(m[1]);
+  }
+  return Array.from(out);
+}
+
+export async function run(argv, ctx) {
+  try {
+    return await _run(argv, ctx);
+  } catch (err) {
+    ctx.stderr.write(`[error] internal: ${err.stack ?? err.message ?? String(err)}\n`);
+    return 2;
+  }
+}
+
+async function _run(argv, { cwd, env, stdout, stderr }) {
   const query = argv.join(' ').trim();
   if (!query) { stderr.write('[error] usage: guide <query>\n'); return 1; }
 
@@ -53,6 +76,11 @@ export async function run(argv, { cwd, env, stdout, stderr }) {
   for (const { rule, score } of scored) {
     const desc = rule.frontmatter.description ?? rule.frontmatter.name ?? rule.id;
     stdout.write(`- ${rule.id}: ${desc} — read: ${rule.path} (score ${score.toFixed(2)})\n`);
+    const linked = extractLinkedPaths(rule.body ?? '');
+    if (linked.length > 0) {
+      stdout.write(`  example code paths:\n`);
+      for (const p of linked) stdout.write(`    - ${p}\n`);
+    }
   }
   return 0;
 }
