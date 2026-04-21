@@ -4,3 +4,15 @@
 
 # Docs / planning artifacts (uncommitted per user preference)
 docs/
+
+# Node dependencies
+node_modules/
+
+# AutoReview runtime artifacts
+.autoreview/.history/
+.autoreview/config.personal.yaml
+.autoreview/config.secrets.yaml
+.autoreview/runtime/
+
+# OS-specific
+.DS_Store

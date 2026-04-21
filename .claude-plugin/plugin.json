@@ -1,0 +1,7 @@
+{
+  "name": "autoreview",
+  "version": "0.1.0",
+  "description": "Per-file LLM code review against Markdown rules. Ollama-first, offline, zero npm deps.",
+  "author": "Krzysztof Dudek",
+  "license": "MIT"
+}
