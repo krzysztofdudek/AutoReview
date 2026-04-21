@@ -2,6 +2,25 @@
   "name": "autoreview",
   "version": "0.1.0",
   "description": "Per-file LLM code review against Markdown rules. Ollama-first, offline, zero npm deps.",
-  "author": "Krzysztof Dudek",
-  "license": "MIT"
+  "author": {
+    "name": "Krzysztof Dudek",
+    "url": "https://github.com/krzysztofdudek"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/krzysztofdudek/AutoReview",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/krzysztofdudek/AutoReview.git"
+  },
+  "keywords": [
+    "code-review",
+    "llm",
+    "ollama",
+    "anthropic",
+    "openai",
+    "pre-commit",
+    "linter",
+    "convention-enforcement",
+    "claude-code-plugin"
+  ]
 }
