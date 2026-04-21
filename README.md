@@ -130,6 +130,16 @@ Skill `autoreview-precheck` wraps this for Claude Code. Agent uses it to avoid w
 /autoreview:validate --sha HEAD~1 did that commit pass?
 ```
 
+## Other commands
+
+- `/autoreview:init` — scaffold `.autoreview/` in a repo.
+- `/autoreview:create-rule` — 7-step guided rule wizard.
+- `/autoreview:context <path>` — list rules matching a path (pre-write).
+- `/autoreview:check-breadth --expr '<expr>'` — test a trigger without the reviewer.
+- `/autoreview:guide <query>` — find rules by free-text intent.
+- `/autoreview:pull-remote [<name>]` — fetch remote rule sources.
+- `/autoreview:history` — query review log (verdict counts, recent records).
+
 ## Providers
 
 **Local:** Ollama. Default. Offline, free, private.
