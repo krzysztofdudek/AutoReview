@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="yggdrasil.svg" alt="AutoReview" width="180" />
-</p>
-
 # AutoReview
 
 **A rule file is a suggestion. This is the reviewer that turns it into a verdict on every commit.**
