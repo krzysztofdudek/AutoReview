@@ -19,11 +19,15 @@ async function writeSidecar(repoRoot, day, content) {
 
 function truncateFileField(rec) {
   const ellipsis = '…/';
+  const ellipsisBytes = Buffer.byteLength(ellipsis);
   const line = JSON.stringify(rec);
   const overflow = Buffer.byteLength(line) - MAX_RECORD_BYTES;
   if (overflow <= 0) return rec;
-  const maxFileLen = Math.max(0, Buffer.byteLength(rec.file) - overflow - Buffer.byteLength(ellipsis));
-  rec.file = ellipsis + rec.file.slice(rec.file.length - maxFileLen);
+  const fileBuf = Buffer.from(rec.file);
+  const maxFileBytes = Math.max(0, fileBuf.length - overflow - ellipsisBytes);
+  // Slice on the Buffer, then decode. Cut from the left (keep tail).
+  const tail = fileBuf.subarray(fileBuf.length - maxFileBytes).toString('utf8');
+  rec.file = ellipsis + tail;
   return rec;
 }
 
