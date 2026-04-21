@@ -81,3 +81,18 @@ test('files mode reads explicit paths', async () => {
     assert.equal(entries[1].content, 'world');
   } finally { await cleanup(); }
 });
+
+test('parallel reads preserve input order', async () => {
+  const { dir, cleanup } = await makeRepo();
+  try {
+    // Create more files than the concurrency limit to ensure ordering is preserved
+    const names = Array.from({ length: 20 }, (_, i) => `f${String(i).padStart(2, '0')}.ts`);
+    for (const name of names) await writeFile(join(dir, name), `content-${name}`);
+    const { entries } = await resolveScope({ repoRoot: dir, files: names });
+    assert.equal(entries.length, names.length);
+    for (let i = 0; i < names.length; i++) {
+      assert.equal(entries[i].path, names[i]);
+      assert.equal(entries[i].content, `content-${names[i]}`);
+    }
+  } finally { await cleanup(); }
+});

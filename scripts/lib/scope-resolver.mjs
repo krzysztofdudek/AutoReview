@@ -4,6 +4,21 @@
 
 import { readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+
+async function runLimited(items, limit, fn) {
+  const results = new Array(items.length);
+  let i = 0;
+  async function worker() {
+    while (true) {
+      const idx = i++;
+      if (idx >= items.length) return;
+      results[idx] = await fn(items[idx], idx);
+    }
+  }
+  const workers = Array(Math.min(limit, items.length)).fill(0).map(worker);
+  await Promise.all(workers);
+  return results;
+}
 import {
   stagedPaths, worktreeModifiedPaths,
   diffStaged, diffUncommitted,
@@ -25,14 +40,14 @@ async function readCommitContentWithBinaryDetect(repoRoot, sha, path) {
 }
 
 async function readEntries(repoRoot, paths, diffFn) {
-  const out = [];
-  for (const p of paths) {
+  return runLimited(paths, 16, async (p) => {
     const { content, binary, size } = await readWithBinaryDetect(join(repoRoot, p));
     const diffResult = diffFn(p);
-    const diff = diffResult && typeof diffResult.catch === 'function' ? await diffResult.catch(() => null) : await diffResult;
-    out.push({ path: p, content, diff, binary, size });
-  }
-  return out;
+    const diff = diffResult && typeof diffResult.catch === 'function'
+      ? await diffResult.catch(() => null)
+      : await diffResult;
+    return { path: p, content, diff, binary, size };
+  });
 }
 
 export async function resolveScope({ repoRoot, scope = null, sha = null, files = null, dir = null, walkCap = 10000 }) {
@@ -44,12 +59,11 @@ export async function resolveScope({ repoRoot, scope = null, sha = null, files =
   if (sha) {
     const resolved = await resolveSha(repoRoot, sha);
     const paths = await commitFiles(repoRoot, resolved);
-    const entries = [];
-    for (const p of paths) {
+    const entries = await runLimited(paths, 16, async (p) => {
       const { content, binary, size } = await readCommitContentWithBinaryDetect(repoRoot, resolved, p);
       const diff = await commitDiff(repoRoot, resolved, p).catch(() => null);
-      entries.push({ path: p, content, diff, binary, size });
-    }
+      return { path: p, content, diff, binary, size };
+    });
     return { entries, warnings, sha: resolved };
   }
   if (scope === 'staged') {
