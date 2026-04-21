@@ -78,7 +78,8 @@ send file + matched rule to reviewer (Ollama by default)
 [reject] src/api/orders.ts :: api/validate-input
     reason: charge() mutates state without zod validation (line 42)
   ↓
-commit blocks on reject (hard mode) or warns (soft mode)
+commit warns but proceeds by default (soft mode).
+Set `enforcement.precommit: hard` in config.yaml to actually block.
 ```
 
 Triggers are deterministic. No LLM call for trigger matching. Only files with matching rules go to the reviewer. No matches, zero cost.
