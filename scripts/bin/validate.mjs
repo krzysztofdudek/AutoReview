@@ -72,16 +72,34 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   for (const w of ruleWarnings) stderr.write(`[warn] ${w}\n`);
   const filtered = values.rule ? rules.filter(r => values.rule.includes(r.id)) : rules;
 
-  const scopeArgs = {
-    repoRoot: root,
-    scope: values.scope ?? ctxOverrides.scope,
-    sha: values.sha,
-    files: values.files,
-    dir: values.dir,
-    walkCap: cfg.review.walk_file_cap ?? 10000,
-  };
-  const { entries, warnings } = await resolveScope(scopeArgs);
-  for (const w of warnings) stderr.write(`[warn] ${w}\n`);
+  // §15: hypothetical pre-check — content from disk scratch file, logical path supplied.
+  let entries;
+  if (values['content-file'] && values['target-path']) {
+    const { readFile } = await import('node:fs/promises');
+    const { isBinary } = await import('../lib/fs-utils.mjs');
+    const buf = await readFile(values['content-file']).catch(() => null);
+    if (!buf) { stderr.write(`[error] cannot read ${values['content-file']}\n`); return 1; }
+    const content = buf.toString('utf8');
+    entries = [{
+      path: values['target-path'],
+      content,
+      diff: null,
+      binary: isBinary(buf),
+      size: buf.length,
+    }];
+  } else {
+    const scopeArgs = {
+      repoRoot: root,
+      scope: values.scope ?? ctxOverrides.scope,
+      sha: values.sha,
+      files: values.files,
+      dir: values.dir,
+      walkCap: cfg.review.walk_file_cap ?? 10000,
+    };
+    const scopeResult = await resolveScope(scopeArgs);
+    for (const w of scopeResult.warnings) stderr.write(`[warn] ${w}\n`);
+    entries = scopeResult.entries;
+  }
 
   // §24: warn if any declared remote source is not on disk (needs pull-remote).
   for (const source of cfg.remote_rules ?? []) {

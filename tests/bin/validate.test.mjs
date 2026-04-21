@@ -145,6 +145,25 @@ test('stub error in precommit (soft) context exits 0 with [error]', async () => 
   } finally { await cleanup(); }
 });
 
+test('validate --content-file + --target-path runs reviewer on hypothetical content (§15)', async () => {
+  const { dir, cleanup } = await makeRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/rules/r.md'),
+      `---\nname: R\ntriggers: 'path:"src/api/**/*.ts"'\n---\nbody`);
+    const draft = join(dir, 'draft.txt');
+    await writeFile(draft, 'hypothetical content');
+    const streams = captureStreams();
+    const code = await run([
+      '--content-file', draft,
+      '--target-path', 'src/api/users.ts',
+    ], { cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'pass' }, ...streams });
+    assert.equal(code, 0);
+    assert.match(streams.err(), /\[pass\] src\/api\/users\.ts/);
+  } finally { await cleanup(); }
+});
+
 test('validate warns when declared remote source is not cached', async () => {
   const { dir, run: git, cleanup } = await makeRepo();
   try {
