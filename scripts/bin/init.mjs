@@ -41,7 +41,7 @@ export async function run(argv, { cwd, env, stdout, stderr }) {
 
   // Step 2: ensure directory layout
   await mkdir(join(autoreview, 'rules'), { recursive: true });
-  await mkdir(join(autoreview, 'history'), { recursive: true });
+  await mkdir(join(autoreview, '.history'), { recursive: true });
   await mkdir(join(autoreview, 'runtime'), { recursive: true });
   await mkdir(join(autoreview, 'remote_rules'), { recursive: true });
 
@@ -81,7 +81,7 @@ export async function run(argv, { cwd, env, stdout, stderr }) {
   await gitignoreEnsure(root, [
     '.autoreview/config.personal.yaml',
     '.autoreview/config.secrets.yaml',
-    '.autoreview/history/',
+    '.autoreview/.history/',
     '.autoreview/runtime/',
   ]);
 

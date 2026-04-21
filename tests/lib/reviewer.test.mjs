@@ -176,7 +176,7 @@ test('historyEnabled writes verdict + file-summary lines', async () => {
       _providerOverride: stubProviderClient({ satisfied: true, reason: 'ok' }),
     });
     const day = new Date().toISOString().slice(0, 10);
-    const body = await readFile(join(dir, '.autoreview/history', `${day}.jsonl`), 'utf8');
+    const body = await readFile(join(dir, '.autoreview/.history', `${day}.jsonl`), 'utf8');
     const lines = body.trim().split('\n').map(JSON.parse);
     assert.equal(lines[0].type, 'verdict');
     assert.equal(lines[1].type, 'file-summary');

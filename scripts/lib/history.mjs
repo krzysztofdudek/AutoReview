@@ -10,9 +10,9 @@ function tsNow() { return new Date().toISOString(); }
 
 async function writeSidecar(repoRoot, day, content) {
   const sha = createHash('sha256').update(content).digest('hex').slice(0, 16);
-  const rel = `.autoreview/history/${day}/${sha}.txt`;
+  const rel = `.autoreview/.history/${day}/${sha}.txt`;
   const abs = join(repoRoot, rel);
-  await mkdir(join(repoRoot, `.autoreview/history/${day}`), { recursive: true });
+  await mkdir(join(repoRoot, `.autoreview/.history/${day}`), { recursive: true });
   await writeFile(abs, content);
   return rel;
 }
@@ -54,8 +54,8 @@ async function fitRecord(repoRoot, rec) {
 
 async function append(repoRoot, rec) {
   const { line, day } = await fitRecord(repoRoot, rec);
-  const path = join(repoRoot, '.autoreview/history', `${day}.jsonl`);
-  await mkdir(join(repoRoot, '.autoreview/history'), { recursive: true });
+  const path = join(repoRoot, '.autoreview/.history', `${day}.jsonl`);
+  await mkdir(join(repoRoot, '.autoreview/.history'), { recursive: true });
   await appendFile(path, line + '\n', { flag: 'a' });
 }
 

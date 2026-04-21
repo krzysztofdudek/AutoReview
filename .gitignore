@@ -9,7 +9,7 @@ docs/
 node_modules/
 
 # AutoReview runtime artifacts
-.autoreview/history/
+.autoreview/.history/
 .autoreview/config.personal.yaml
 .autoreview/config.secrets.yaml
 .autoreview/runtime/
