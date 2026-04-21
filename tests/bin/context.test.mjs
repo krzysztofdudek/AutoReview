@@ -43,6 +43,23 @@ test('context lists rules matching a path', async () => {
   } finally { await cleanup(); }
 });
 
+test('context with no args lists all rules', async () => {
+  const { dir, cleanup } = await mkRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/rules/a.md'),
+      `---\nname: "A"\ntriggers: 'path:"**"'\ndescription: "rule a"\n---\nbody`);
+    await writeFile(join(dir, '.autoreview/rules/b.md'),
+      `---\nname: "B"\ntriggers: 'path:"**"'\ndescription: "rule b"\n---\nbody`);
+    const c = capture();
+    const code = await run([], { cwd: dir, env: {}, ...c });
+    assert.equal(code, 0);
+    assert.match(c.out(), /All rules \(2\)/);
+    assert.match(c.out(), /a: rule a/);
+    assert.match(c.out(), /b: rule b/);
+  } finally { await cleanup(); }
+});
+
 test('context returns "no rules match" cleanly', async () => {
   const { dir, cleanup } = await mkRepo();
   try {

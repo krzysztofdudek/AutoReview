@@ -19,7 +19,23 @@ export async function run(argv, ctx) {
 
 async function _run(argv, { cwd, env, stdout, stderr }) {
   const [target] = argv;
-  if (!target) { stderr.write('[error] usage: context <path>\n'); return 1; }
+  if (!target) {
+    // No path given — list all rules
+    let root;
+    try { root = await repoRoot(cwd); } catch { root = cwd; }
+    const cfg = await loadConfig(root).catch(() => DEFAULT_CONFIG);
+    const { rules } = await loadRules(root, cfg);
+    if (rules.length === 0) {
+      stdout.write('No rules loaded.\n');
+      return 0;
+    }
+    stdout.write(`All rules (${rules.length}):\n`);
+    for (const r of rules) {
+      const desc = r.frontmatter.description ?? r.frontmatter.name ?? '';
+      stdout.write(`- ${r.id}: ${desc}\n`);
+    }
+    return 0;
+  }
 
   let root;
   try { root = await repoRoot(cwd); } catch { root = cwd; }
