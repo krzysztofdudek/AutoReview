@@ -21,3 +21,4 @@ export { run as runCheckBreadth } from './bin/check-breadth.mjs';
 export { run as runContext } from './bin/context.mjs';
 export { run as runGuide } from './bin/guide.mjs';
 export { run as runPullRemote } from './bin/pull-remote.mjs';
+export { run as runHistory } from './bin/history.mjs';

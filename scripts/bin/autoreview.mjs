@@ -11,6 +11,7 @@ const SUBCOMMANDS = {
   guide: () => import('./guide.mjs'),
   'pull-remote': () => import('./pull-remote.mjs'),
   'reviewer-test': () => import('./reviewer-test.mjs'),
+  history: () => import('./history.mjs'),
 };
 
 export async function run(argv, ctx) {

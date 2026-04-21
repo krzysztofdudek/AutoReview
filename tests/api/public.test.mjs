@@ -9,7 +9,7 @@ test('public API exports required symbols', () => {
     'matchPath', 'buildPrompt', 'parseResponse', 'appendVerdict',
     'createIntentGate', 'pullSource', 'scanSuppressMarkers',
     'runValidate', 'runInit', 'runCreateRule', 'runCheckBreadth',
-    'runContext', 'runGuide', 'runPullRemote',
+    'runContext', 'runGuide', 'runPullRemote', 'runHistory',
   ];
   for (const name of expectedFunctions) {
     assert.equal(typeof api[name], 'function', `missing export: ${name}`);
