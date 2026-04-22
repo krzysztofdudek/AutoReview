@@ -31,7 +31,15 @@ export function create({ model, apiKey, url = 'https://api.openai.com/v1/chat/co
         }, { attempts: 3, initialMs: 500, factor: 2, jitterMs: 200, shouldRetry: retryable, ..._retryOptions });
         if (r.status !== 200) return { satisfied: false, providerError: true, raw: r.body };
         const payload = JSON.parse(r.body);
-        return parseResponse(payload.choices?.[0]?.message?.content ?? '');
+        const out = parseResponse(payload.choices?.[0]?.message?.content ?? '');
+        if (payload.usage) {
+          out.usage = {
+            input_tokens: payload.usage.prompt_tokens,
+            output_tokens: payload.usage.completion_tokens,
+            total_tokens: payload.usage.total_tokens,
+          };
+        }
+        return out;
       } catch (err) {
         return { satisfied: false, providerError: true, raw: String(err) };
       }

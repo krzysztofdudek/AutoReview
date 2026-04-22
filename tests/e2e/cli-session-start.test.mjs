@@ -29,13 +29,15 @@ test('S1 + .autoreview present + server reachable -> exit 0, provider reachable'
   } finally { await env.cleanup(); }
 });
 
-test('S2 + no .autoreview -> exit 0, "not initialized"', async (t) => {
+test('S2 + no .autoreview -> exit 0 with actionable init hint on stdout', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('ss');
   try {
     const r = await runHook(env);
     assert.equal(r.code, 0);
-    assert.match(r.stderr, /not initialized/);
+    // Hint goes to stdout (agent context) so Claude can relay it to the user.
+    assert.match(r.stdout, /\[autoreview\].*does not exist/);
+    assert.match(r.stdout, /\/autoreview:init/);
   } finally { await env.cleanup(); }
 });
 

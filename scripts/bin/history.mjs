@@ -45,6 +45,8 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   if (values.rule) filtered = filtered.filter(r => r.rule === values.rule);
   if (values.verdict) filtered = filtered.filter(r => r.verdict === values.verdict);
   if (values.file) filtered = filtered.filter(r => matchPath(values.file, r.file));
+  if (values.sha) filtered = filtered.filter(r => r.commit_sha && r.commit_sha.startsWith(values.sha));
+  if (values.actor) filtered = filtered.filter(r => r.actor === values.actor);
 
   if (format === 'jsonl') {
     for (const r of filtered) stdout.write(JSON.stringify(r) + '\n');
@@ -54,13 +56,26 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   // Aggregate
   const byVerdict = {};
   const byRule = {};
+  const byProvider = {};
+  let totalInput = 0, totalOutput = 0, hasUsage = false;
   for (const r of filtered) {
     byVerdict[r.verdict] = (byVerdict[r.verdict] ?? 0) + 1;
     byRule[r.rule] = (byRule[r.rule] ?? 0) + 1;
+    if (r.provider) byProvider[r.provider] = (byProvider[r.provider] ?? 0) + 1;
+    if (r.usage) {
+      hasUsage = true;
+      totalInput += r.usage.input_tokens ?? 0;
+      totalOutput += r.usage.output_tokens ?? 0;
+    }
   }
+  const usageTotals = hasUsage ? {
+    input_tokens: totalInput,
+    output_tokens: totalOutput,
+    total_tokens: totalInput + totalOutput,
+  } : null;
 
   if (format === 'json') {
-    stdout.write(JSON.stringify({ total: filtered.length, by_verdict: byVerdict, by_rule: byRule, records: filtered.slice(-10) }, null, 2) + '\n');
+    stdout.write(JSON.stringify({ total: filtered.length, by_verdict: byVerdict, by_rule: byRule, by_provider: byProvider, usage: usageTotals, records: filtered.slice(-10) }, null, 2) + '\n');
     return 0;
   }
 
@@ -74,9 +89,23 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   for (const [r, n] of Object.entries(byRule).sort((a, b) => b[1] - a[1]).slice(0, 10)) {
     stdout.write(`  ${r}: ${n}\n`);
   }
+  if (Object.keys(byProvider).length > 0) {
+    stdout.write(`\nBy provider:\n`);
+    for (const [p, n] of Object.entries(byProvider).sort((a, b) => b[1] - a[1])) {
+      stdout.write(`  ${p}: ${n}\n`);
+    }
+  }
+  if (usageTotals) {
+    stdout.write(`\nToken usage (where recorded):\n`);
+    stdout.write(`  input:  ${usageTotals.input_tokens}\n`);
+    stdout.write(`  output: ${usageTotals.output_tokens}\n`);
+    stdout.write(`  total:  ${usageTotals.total_tokens}\n`);
+  }
   stdout.write(`\nRecent 10 records:\n`);
   for (const r of filtered.slice(-10)) {
-    stdout.write(`  [${r.verdict}] ${r.ts} ${r.file} :: ${r.rule}\n`);
+    const sha = r.commit_sha ? ` ${r.commit_sha.slice(0, 7)}` : '';
+    const actor = r.actor ? ` <${r.actor}>` : '';
+    stdout.write(`  [${r.verdict}]${sha} ${r.ts}${actor} ${r.file} :: ${r.rule}\n`);
   }
   return 0;
 }

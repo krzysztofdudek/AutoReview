@@ -90,6 +90,35 @@ export async function installPrecommit(cwd, scriptBody) {
   return 'installed';
 }
 
+export async function gitUserEmail(cwd) {
+  try { return (await execGit(cwd, ['config', 'user.email'])).trim() || null; }
+  catch { return null; }
+}
+
+/**
+ * Identify who/where the review is running. Used for history attribution.
+ * Captures git user.email + host + CI run id. All fields are optional — null when
+ * unavailable (e.g. pre-commit on a fresh box with no git identity, local dev
+ * outside CI). Cached per-cwd: one git subprocess per session.
+ */
+const _actorCache = new Map();
+export async function actorContext(cwd, env = process.env) {
+  if (_actorCache.has(cwd)) return _actorCache.get(cwd);
+  const { hostname } = await import('node:os');
+  const actor = await gitUserEmail(cwd);
+  const host = hostname();
+  // Common CI env vars — first that's set wins.
+  const ci_run_id = env.GITHUB_RUN_ID ?? env.GITLAB_CI_PIPELINE_ID ?? env.CI_JOB_ID
+    ?? env.BUILDKITE_BUILD_ID ?? env.CIRCLE_BUILD_NUM ?? (env.CI ? 'unknown-ci' : null);
+  const ctx = { actor, host, ci_run_id: ci_run_id || null };
+  _actorCache.set(cwd, ctx);
+  return ctx;
+}
+
+export function _resetActorCache() {
+  _actorCache.clear();
+}
+
 export async function gitignoreEnsure(cwd, lines) {
   const path = join(cwd, '.gitignore');
   const existing = (await readFileOrNull(path)) ?? '';

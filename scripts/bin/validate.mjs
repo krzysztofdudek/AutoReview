@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // scripts/bin/validate.mjs
 import { parseArgs } from '../lib/args.mjs';
-import { repoRoot } from '../lib/git-utils.mjs';
+import { repoRoot, actorContext } from '../lib/git-utils.mjs';
 import { loadConfig } from '../lib/config-loader.mjs';
 import { loadRules } from '../lib/rule-loader.mjs';
 import { resolveScope } from '../lib/scope-resolver.mjs';
@@ -109,6 +109,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
 
   // §15: hypothetical pre-check — content from disk scratch file, logical path supplied.
   let entries;
+  let resolvedSha = null;  // full SHA when --sha was used; populated by resolveScope
   if (values['content-file'] && values['target-path']) {
     // Relative paths resolve against ctx.cwd (not process.cwd()).
     const contentFile = isAbsolute(values['content-file'])
@@ -137,6 +138,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     const scopeResult = await resolveScope(scopeArgs);
     for (const w of scopeResult.warnings) stderr.write(`[warn] ${w}\n`);
     entries = scopeResult.entries;
+    resolvedSha = scopeResult.sha ?? null;
   }
 
   const stubProvider = stubProviderByEnv(env);
@@ -150,7 +152,15 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     onBudgetExhausted: () => stderr.write('[warn] intent budget exhausted — remaining rules evaluated against Layer 1 only\n'),
   });
 
-  const historySession = cfg.history.log_to_file ? createHistorySession(root) : null;
+  // Attribute every verdict: who ran the review, on which host, under which CI job,
+  // and against which commit (when --sha was used; null otherwise — pre-commit's target
+  // commit doesn't exist yet, and validate on uncommitted has no single sha).
+  const attribution = await actorContext(root, env);
+  const historyDefaults = { ...attribution };
+  if (resolvedSha) historyDefaults.commit_sha = resolvedSha;
+  const historySession = cfg.history.log_to_file
+    ? createHistorySession(root, { defaults: historyDefaults })
+    : null;
 
   let hardFailure = false;
   let rejectCount = 0;

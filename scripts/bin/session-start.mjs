@@ -19,7 +19,11 @@ export async function run(argv, ctx) {
 async function _run(argv, { cwd, env, stdout, stderr }) {
   const cfgPath = join(cwd, '.autoreview/config.yaml');
   const cfgRaw = await readFileOrNull(cfgPath);
-  if (!cfgRaw) { stderr.write('AutoReview not initialized in this repo\n'); return 0; }
+  if (!cfgRaw) {
+    // Surface an actionable hint the agent can relay to the user.
+    stdout.write('[autoreview] plugin is installed but `.autoreview/` does not exist in this repo. Nothing will be reviewed. Run `/autoreview:init --provider ollama --install-precommit` (or another provider) to scaffold it.\n');
+    return 0;
+  }
 
   try {
     const cfg = await loadConfig(cwd, { env });

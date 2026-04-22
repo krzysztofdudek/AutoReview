@@ -10,14 +10,15 @@ function capture() {
   return { stdout: { write: (s) => out.push(s) }, stderr: { write: (s) => err.push(s) }, out: () => out.join(''), err: () => err.join('') };
 }
 
-test('exits 0 silent-stdout when no .autoreview', async () => {
+test('exits 0 with actionable init hint when no .autoreview', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ar-ss-'));
   try {
     const c = capture();
     const code = await run([], { cwd: dir, env: {}, ...c });
     assert.equal(code, 0);
-    assert.equal(c.out(), '');
-    assert.match(c.err(), /not initialized/i);
+    // Hint now goes to stdout so the agent sees it in its context and can relay to the user.
+    assert.match(c.out(), /\[autoreview\].*\.autoreview.*does not exist/);
+    assert.match(c.out(), /\/autoreview:init/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

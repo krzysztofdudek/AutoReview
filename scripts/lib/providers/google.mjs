@@ -36,7 +36,15 @@ export function create({ model, apiKey, baseUrl = 'https://generativelanguage.go
         if (r.status !== 200) return { satisfied: false, providerError: true, raw: r.body };
         const payload = JSON.parse(r.body);
         const text = payload.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-        return parseResponse(text);
+        const out = parseResponse(text);
+        if (payload.usageMetadata) {
+          out.usage = {
+            input_tokens: payload.usageMetadata.promptTokenCount,
+            output_tokens: payload.usageMetadata.candidatesTokenCount,
+            total_tokens: payload.usageMetadata.totalTokenCount,
+          };
+        }
+        return out;
       } catch (err) {
         return { satisfied: false, providerError: true, raw: String(err) };
       }

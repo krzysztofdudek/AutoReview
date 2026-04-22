@@ -51,7 +51,13 @@ export function create({ endpoint, model, _retryOptions } = {}) {
         );
         if (r.status !== 200) return { satisfied: false, providerError: true, raw: r.body };
         const payload = JSON.parse(r.body);
-        return parseResponse(payload.response ?? '');
+        const out = parseResponse(payload.response ?? '');
+        if (typeof payload.prompt_eval_count === 'number' || typeof payload.eval_count === 'number') {
+          const input = payload.prompt_eval_count ?? 0;
+          const output = payload.eval_count ?? 0;
+          out.usage = { input_tokens: input, output_tokens: output, total_tokens: input + output };
+        }
+        return out;
       } catch (err) {
         return { satisfied: false, providerError: true, raw: String(err) };
       }

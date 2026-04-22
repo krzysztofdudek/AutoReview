@@ -51,6 +51,24 @@ test('majority providerError surfaces providerError', async () => {
   assert.equal(r.providerError, true);
 });
 
+test('aggregateUsage sums token counts across votes', async () => {
+  const p = stubProvider([
+    { satisfied: true, usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120 } },
+    { satisfied: true, usage: { input_tokens: 110, output_tokens: 25, total_tokens: 135 } },
+    { satisfied: true, usage: { input_tokens: 120, output_tokens: 22, total_tokens: 142 } },
+  ]);
+  const r = await voteConsensus(p, 'p', { consensus: 3, maxTokens: 100 });
+  assert.equal(r.usage.input_tokens, 330);
+  assert.equal(r.usage.output_tokens, 67);
+  assert.equal(r.usage.total_tokens, 397);
+});
+
+test('aggregateUsage returns null when no vote carried usage', async () => {
+  const p = stubProvider([{ satisfied: true }, { satisfied: true }]);
+  const r = await voteConsensus(p, 'p', { consensus: 1, maxTokens: 100 });
+  assert.equal(r.usage, null);
+});
+
 test('voteConsensus times out a hanging provider call', async () => {
   const stuck = {
     name: 'stuck', model: 'x',

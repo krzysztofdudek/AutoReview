@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { makeRepo } from './git-helpers.mjs';
-import { repoRoot, stagedPaths, diffStaged } from '../../scripts/lib/git-utils.mjs';
+import { repoRoot, stagedPaths, diffStaged, actorContext, gitUserEmail, _resetActorCache } from '../../scripts/lib/git-utils.mjs';
 
 test('repoRoot returns absolute path', async () => {
   const { dir, cleanup } = await makeRepo();
@@ -95,5 +95,81 @@ test('gitignoreEnsure is idempotent', async () => {
     await gitignoreEnsure(dir, ['.autoreview/history/']);
     const body = await readFile(join(dir, '.gitignore'), 'utf8');
     assert.equal((body.match(/\.autoreview\/history\//g) || []).length, 1);
+  } finally { await cleanup(); }
+});
+
+test('gitUserEmail returns configured email', async () => {
+  const { dir, run, cleanup } = await makeRepo();
+  try {
+    run('config', 'user.email', 'test@example.com');
+    assert.equal(await gitUserEmail(dir), 'test@example.com');
+  } finally { await cleanup(); }
+});
+
+test('gitUserEmail returns null when unconfigured and no global fallback', async () => {
+  // Use an empty tmp dir (not a git repo) — gitUserEmail swallows errors.
+  const { mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const dir = await mkdtemp(join(tmpdir(), 'ar-noemail-'));
+  try {
+    const v = await gitUserEmail(dir);
+    // Could be null (no git repo, no config). Either way shouldn't throw.
+    assert.ok(v === null || typeof v === 'string');
+  } finally {
+    const { rm } = await import('node:fs/promises');
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('actorContext gathers actor + host + ci_run_id', async () => {
+  _resetActorCache();
+  const { dir, run, cleanup } = await makeRepo();
+  try {
+    run('config', 'user.email', 'ci@test');
+    const ctx = await actorContext(dir, { GITHUB_RUN_ID: '12345' });
+    assert.equal(ctx.actor, 'ci@test');
+    assert.ok(ctx.host); // hostname always returns something
+    assert.equal(ctx.ci_run_id, '12345');
+  } finally { await cleanup(); }
+});
+
+test('actorContext caches per-cwd', async () => {
+  _resetActorCache();
+  const { dir, run, cleanup } = await makeRepo();
+  try {
+    run('config', 'user.email', 'cache@test');
+    const ctx1 = await actorContext(dir, {});
+    // Change email AFTER first resolution. Cache should keep the old value.
+    run('config', 'user.email', 'changed@test');
+    const ctx2 = await actorContext(dir, {});
+    assert.equal(ctx1.actor, 'cache@test');
+    assert.equal(ctx2.actor, 'cache@test');
+  } finally { await cleanup(); }
+});
+
+test('actorContext ci_run_id falls through multiple env vars', async () => {
+  _resetActorCache();
+  const { dir, cleanup } = await makeRepo();
+  try {
+    const ctx = await actorContext(dir, { CIRCLE_BUILD_NUM: '99' });
+    assert.equal(ctx.ci_run_id, '99');
+  } finally { await cleanup(); }
+});
+
+test('actorContext ci_run_id null when outside CI', async () => {
+  _resetActorCache();
+  const { dir, cleanup } = await makeRepo();
+  try {
+    const ctx = await actorContext(dir, {});
+    assert.equal(ctx.ci_run_id, null);
+  } finally { await cleanup(); }
+});
+
+test('actorContext ci_run_id "unknown-ci" when CI=true but no known id var', async () => {
+  _resetActorCache();
+  const { dir, cleanup } = await makeRepo();
+  try {
+    const ctx = await actorContext(dir, { CI: 'true' });
+    assert.equal(ctx.ci_run_id, 'unknown-ci');
   } finally { await cleanup(); }
 });

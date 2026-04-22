@@ -41,7 +41,15 @@ export function create({ model, apiKey, url = DEFAULT_URL }) {
         if (r.status !== 200) return { satisfied: false, providerError: true, raw: r.body };
         const payload = JSON.parse(r.body);
         const text = payload.content?.[0]?.text ?? '';
-        return parseResponse(text);
+        const out = parseResponse(text);
+        if (payload.usage) {
+          out.usage = {
+            input_tokens: payload.usage.input_tokens,
+            output_tokens: payload.usage.output_tokens,
+            total_tokens: (payload.usage.input_tokens ?? 0) + (payload.usage.output_tokens ?? 0),
+          };
+        }
+        return out;
       } catch (err) {
         return { satisfied: false, providerError: true, raw: String(err) };
       }

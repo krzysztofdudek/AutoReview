@@ -67,7 +67,7 @@ export async function appendFileSummary(repoRoot, record) {
   await append(repoRoot, { type: 'file-summary', ...record });
 }
 
-export function createHistorySession(repoRoot) {
+export function createHistorySession(repoRoot, { defaults = {} } = {}) {
   const streams = new Map(); // day -> writable stream
   let closed = false;
 
@@ -84,7 +84,9 @@ export function createHistorySession(repoRoot) {
   return {
     async append(rec) {
       if (closed) throw new Error('history session closed');
-      const { line, day } = await fitRecord(repoRoot, rec);
+      // Attribution defaults (actor, host, ci_run_id, commit_sha) — caller wins if set explicitly.
+      const merged = { ...defaults, ...rec };
+      const { line, day } = await fitRecord(repoRoot, merged);
       const s = await getStream(day);
       await new Promise((resolve, reject) => {
         s.write(line + '\n', err => err ? reject(err) : resolve());

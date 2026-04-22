@@ -47,6 +47,37 @@ test('verify posts to /api/generate and parses response', async () => {
   } finally { await close(); }
 });
 
+test('verify extracts token usage from prompt_eval_count + eval_count', async () => {
+  const { port, close } = await spin({
+    '/api/generate': (q, r) => {
+      r.writeHead(200);
+      r.end(JSON.stringify({
+        response: '{"satisfied":true}',
+        prompt_eval_count: 150,
+        eval_count: 40,
+      }));
+    },
+  });
+  try {
+    const p = create({ endpoint: `http://127.0.0.1:${port}`, model: 'x' });
+    const v = await p.verify('p', { maxTokens: 100 });
+    assert.equal(v.usage.input_tokens, 150);
+    assert.equal(v.usage.output_tokens, 40);
+    assert.equal(v.usage.total_tokens, 190);
+  } finally { await close(); }
+});
+
+test('verify omits usage when counts missing from response', async () => {
+  const { port, close } = await spin({
+    '/api/generate': (q, r) => { r.writeHead(200); r.end(JSON.stringify({ response: '{"satisfied":true}' })); },
+  });
+  try {
+    const p = create({ endpoint: `http://127.0.0.1:${port}`, model: 'x' });
+    const v = await p.verify('p', { maxTokens: 100 });
+    assert.equal(v.usage, undefined);
+  } finally { await close(); }
+});
+
 test('verify handles non-200 as providerError', async () => {
   const { port, close } = await spin({
     '/api/generate': (q, r) => { r.writeHead(500); r.end('boom'); },

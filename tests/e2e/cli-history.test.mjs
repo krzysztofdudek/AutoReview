@@ -157,6 +157,85 @@ test('H-until + --until filter by date-prefix (inclusive upper bound)', async (t
   } finally { await env.cleanup(); }
 });
 
+test('H-sha + --sha filter matches records by commit_sha prefix', async (t) => {
+  skipUnlessE2E(t);
+  const env = await createEnv('hist');
+  try {
+    await env.writeConfig();
+    await seedHistory(env, '2026-04-20', [
+      { ts: 't', type: 'verdict', file: 'a.ts', rule: 'r', verdict: 'pass', commit_sha: 'deadbeef123abc' },
+      { ts: 't', type: 'verdict', file: 'b.ts', rule: 'r', verdict: 'pass', commit_sha: 'feedface456def' },
+    ]);
+    const r = await env.run('history', ['--sha', 'deadbeef']);
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /Total records: 1/);
+  } finally { await env.cleanup(); }
+});
+
+test('H-actor + --actor filter matches records by email', async (t) => {
+  skipUnlessE2E(t);
+  const env = await createEnv('hist');
+  try {
+    await env.writeConfig();
+    await seedHistory(env, '2026-04-20', [
+      { ts: 't', type: 'verdict', file: 'a.ts', rule: 'r', verdict: 'pass', actor: 'alice@x' },
+      { ts: 't', type: 'verdict', file: 'b.ts', rule: 'r', verdict: 'pass', actor: 'bob@x' },
+    ]);
+    const r = await env.run('history', ['--actor', 'alice@x']);
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /Total records: 1/);
+  } finally { await env.cleanup(); }
+});
+
+test('H-usage + table shows token totals when recorded', async (t) => {
+  skipUnlessE2E(t);
+  const env = await createEnv('hist');
+  try {
+    await env.writeConfig();
+    await seedHistory(env, '2026-04-20', [
+      { ts: 't', type: 'verdict', file: 'a.ts', rule: 'r', verdict: 'pass', provider: 'openai', usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 } },
+      { ts: 't', type: 'verdict', file: 'b.ts', rule: 'r', verdict: 'pass', provider: 'openai', usage: { input_tokens: 200, output_tokens: 80, total_tokens: 280 } },
+    ]);
+    const r = await env.run('history', []);
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /Token usage/);
+    assert.match(r.stdout, /input:\s+300/);
+    assert.match(r.stdout, /output:\s+130/);
+  } finally { await env.cleanup(); }
+});
+
+test('H-by-provider + table shows provider breakdown', async (t) => {
+  skipUnlessE2E(t);
+  const env = await createEnv('hist');
+  try {
+    await env.writeConfig();
+    await seedHistory(env, '2026-04-20', [
+      { ts: 't', type: 'verdict', file: 'a.ts', rule: 'r', verdict: 'pass', provider: 'openai' },
+      { ts: 't', type: 'verdict', file: 'b.ts', rule: 'r', verdict: 'pass', provider: 'ollama' },
+      { ts: 't', type: 'verdict', file: 'c.ts', rule: 'r', verdict: 'pass', provider: 'openai' },
+    ]);
+    const r = await env.run('history', []);
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /By provider:/);
+    assert.match(r.stdout, /openai: 2/);
+    assert.match(r.stdout, /ollama: 1/);
+  } finally { await env.cleanup(); }
+});
+
+test('H-recent-sha-actor + recent list shows short sha + actor', async (t) => {
+  skipUnlessE2E(t);
+  const env = await createEnv('hist');
+  try {
+    await env.writeConfig();
+    await seedHistory(env, '2026-04-20', [
+      { ts: '2026-04-20T10:00', type: 'verdict', file: 'a.ts', rule: 'r', verdict: 'pass', commit_sha: 'deadbeef123abc456', actor: 'alice@x' },
+    ]);
+    const r = await env.run('history', []);
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /deadbee.*<alice@x>.*a\.ts :: r/);
+  } finally { await env.cleanup(); }
+});
+
 test('H-jsonl + --format jsonl streams raw records', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('hist');
