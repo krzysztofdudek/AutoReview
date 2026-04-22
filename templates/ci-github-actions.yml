@@ -26,6 +26,14 @@ jobs:
         with:
           node-version: '20'
 
+      # Cache the Ollama model so subsequent PR runs skip the multi-GB pull.
+      # Bump the key when you want a clean re-download (e.g. model upgrade).
+      - name: Cache Ollama models
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama/models
+          key: ollama-qwen2.5-coder-7b-v1
+
       - name: Install Ollama (local reviewer — free, no API key needed)
         run: |
           curl -fsSL https://ollama.com/install.sh | sh
@@ -34,16 +42,16 @@ jobs:
           ollama pull qwen2.5-coder:7b
 
       - name: Pull remote rule sources
-        # Skip if your repo has no `remote_rules` configured.
-        run: node .autoreview/runtime/bin/validate.mjs --help >/dev/null || true
-        continue-on-error: true
+        # Skip the step entirely if your repo has no `remote_rules:` in .autoreview/config.yaml.
+        # `pull-remote` is a no-op when the config declares no sources, so it's safe to always run.
+        run: node .autoreview/runtime/bin/pull-remote.mjs
 
       - name: Review PR files under hard enforcement
         # `--context validate` is hard by default → exit 1 on reject → PR fails.
         # Swap scope to --scope all for a whole-repo sweep.
         run: node .autoreview/runtime/bin/validate.mjs --scope uncommitted --mode thinking
 
-      # Paid provider alternative (comment out the ollama steps above and use this instead):
+      # Paid provider alternative (comment out the ollama + cache steps above and use this instead):
       # - name: Review PR files
       #   env:
       #     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

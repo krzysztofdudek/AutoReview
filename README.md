@@ -16,20 +16,21 @@ A rules file is a suggestion. There are no consequences for ignoring it. This is
 
 ## Quickstart
 
-```
-/plugin install autoreview
-/autoreview:init --provider ollama --install-precommit
-```
+Three steps, in order:
 
-That's it. `init` scaffolds `.autoreview/`, installs the git pre-commit hook, ships one example rule. Default provider is Ollama — install it first from https://ollama.ai if you haven't.
+1. **Install Ollama** (or skip to step 2 if you're using a paid API). Grab it from https://ollama.ai, then `ollama serve &` in a terminal.
+2. **Install the plugin in Claude Code:** `/plugin install autoreview`. Nothing happens to your repo yet — plugin install alone is inert.
+3. **Scaffold AutoReview in your repo:** `/autoreview:init --provider ollama --install-precommit`. This creates `.autoreview/`, installs the git pre-commit hook, and ships one example rule.
 
 Three things to know before your first commit:
 
 - **Soft by default.** Pre-commit warns on `[reject]` but still lets the commit through. Flip to blocking by setting `enforcement.precommit: hard` in `.autoreview/config.yaml`.
-- **Nothing runs until `init`.** Installing the plugin alone does nothing to your repo. If you see no verdicts on commit, run `init`.
+- **Nothing runs until step 3.** Only `init` drops the hook and scaffolds config. If you see no verdicts on commit, `init` hasn't run.
 - **What leaves your machine.** Ollama keeps everything local. Paid providers (Anthropic/OpenAI/Google/openai-compat) receive the full file content plus the matching rule body on each call. Trigger matching runs locally — files that match no rule never leave the box.
 
 To add your first rule, just tell the agent: `"add a rule that forbids console.log in production code"` — it'll walk you through the 7-step wizard and save the rule at `.autoreview/rules/`.
+
+After init, the agent reads [templates/agent-rules.md](templates/agent-rules.md) (copied into your repo at install time) and uses that as its operating manual for AutoReview commands. You don't need to memorize anything; just talk to the agent.
 
 ## The problem
 
@@ -168,8 +169,22 @@ Skill `autoreview-precheck` wraps this for Claude Code. Agent uses it to avoid w
 ```
 /autoreview:validate              uncommitted files, thinking mode
 /autoreview:validate --scope all  full repo sweep
-/autoreview:validate --sha HEAD~1 did that commit pass?
+/autoreview:validate --sha HEAD~1 re-run the reviewer against a past commit
+/autoreview:history --sha HEAD~1  look up a past commit in the log (free — no LLM call)
 ```
+
+`validate --sha` re-runs the reviewer against the commit's tree. `history --sha` queries `.autoreview/.history/*.jsonl` for what the reviewer already decided when that commit was actually reviewed. Prefer history when you just want to know "did my last commit pass?" — no tokens spent.
+
+## Editing rules
+
+Rules are plain Markdown files at `.autoreview/rules/<id>.md`. Open one in your editor to change the body or the `triggers:` line; delete the file to remove the rule. `/autoreview:create-rule` runs the quality-guarded wizard for *new* rules only.
+
+- **Change what's enforced** → edit the body in `.autoreview/rules/<id>.md`.
+- **Change which files it applies to** → edit the `triggers:` line in the frontmatter.
+- **Turn one rule off temporarily** → add the id under `rules.disabled:` in `config.yaml` (team) or `config.personal.yaml` (just you).
+- **Remove entirely** → delete the file.
+
+No re-init, no rebuild. The next commit picks up the change.
 
 ## Other commands
 
@@ -286,6 +301,7 @@ Delete `.autoreview/` and the pre-commit hook. No runtime dependencies, no build
 
 ## Docs
 
+- [SECURITY.md](SECURITY.md) — data flow, sandboxing, fail-open invariants, prompt-injection surface.
 - [Functional spec](docs/specification.md), the 29-point contract.
 - [Implementation design](docs/superpowers/specs/2026-04-20-autoreview-plugin-design.md).
 

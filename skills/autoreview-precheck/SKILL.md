@@ -1,6 +1,6 @@
 ---
 name: autoreview-precheck
-description: Use when user has drafted file content that is NOT on disk yet and wants a reviewer verdict before writing — explicit phrases like "would this pass review?", "check before I save", "will this be accepted?" with content not yet persisted. Costs 1 LLM call per rule. For plain "I'm about to edit file X", use autoreview-context (free) — don't precheck every edit. Skip when no `.autoreview/` exists — use autoreview-setup first.
+description: Use when user has drafted file content that is NOT on disk yet and wants a reviewer verdict before writing — explicit phrases like "would this pass review?", "check before I save", "will this be accepted?" with content not yet persisted. Costs 1 LLM call per rule. If the user references an existing file ("does this file pass", "check src/foo.ts") use autoreview-review instead — precheck requires unsaved draft content (pasted, or pointed at via `--content-file`). For plain "I'm about to edit file X", use autoreview-context (free) — don't precheck every edit. Skip when no `.autoreview/` exists — use autoreview-setup first.
 ---
 
 # AutoReview Pre-check

@@ -1,6 +1,6 @@
 ---
 name: autoreview-create-rule
-description: Use when user wants a new code convention rule added, regardless of phrasing — "add a rule", "enforce X", "forbid Y", "write a rule for Z", "create `.autoreview/rules/foo.md` with body ...". ALWAYS invoke this skill for rule authoring, even when the user asks to skip the wizard or specifies the exact file path and body — the wizard guards rule quality. Triggered whenever the user describes a pattern they want checked on every commit. Skip when no `.autoreview/` exists — use autoreview-setup first.
+description: Use when user wants a new code convention rule added, regardless of phrasing — "add a rule", "enforce X", "forbid Y", "write a rule for Z", "create `.autoreview/rules/foo.md` with body ...". Once `.autoreview/` exists, invoke this skill for rule authoring even when the user asks to skip the wizard or specifies the exact file path and body — the wizard guards rule quality. Triggered whenever the user describes a pattern they want checked on every commit. Skip when no `.autoreview/` exists — use autoreview-setup first, then come back here.
 ---
 
 # AutoReview Create-Rule Wizard

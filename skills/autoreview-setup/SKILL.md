@@ -1,6 +1,6 @@
 ---
 name: autoreview-setup
-description: Use when the user asks to set up AutoReview in the repo ("setup autoreview", "init autoreview", "add autoreview here") or when `.autoreview/` is missing and the user wants code review. Also triggers when the agent notices no config but rules are being discussed. Skip when `.autoreview/` already exists and the user is not asking for a reset (use autoreview-create-rule instead to add rules).
+description: Use when the user asks to set up AutoReview in the repo ("setup autoreview", "init autoreview", "initialize autoreview", "bootstrap autoreview", "add autoreview here", "install autoreview") or when `.autoreview/` is missing and the user wants code review. Also triggers when the agent notices no config but rules are being discussed. Skip when `.autoreview/` already exists and the user is not asking for a reset (use autoreview-create-rule instead to add rules).
 ---
 
 # AutoReview Setup
