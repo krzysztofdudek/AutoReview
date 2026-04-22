@@ -143,6 +143,15 @@ Agent:  Runs the 7-step wizard. Proposes a trigger, shows which files
         match, test-drives the rule on a sample file, then writes it.
 ```
 
+The 7 steps the agent walks through:
+1. **Convention** — clarify exactly what you want enforced.
+2. **Name + trigger** — grep the repo layout, propose a `path:`/`dir:`/`content:` trigger.
+3. **Breadth check** — run the trigger locally, show match count + first 10 files. Iterate until the set is right.
+4. **Pass/fail samples** — read 2–3 matched files, reason about whether they'd pass the draft body.
+5. **Intent trigger?** — offer a Layer-2 NL gate (only when `intent_triggers: true` in config).
+6. **Test-drive** — run the actual reviewer against sample files. Adjust body if verdicts are wrong.
+7. **Save** — write `.autoreview/rules/<id>.md`.
+
 Commit. Hook runs. Done.
 
 ## Escape hatches
