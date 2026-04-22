@@ -181,8 +181,14 @@ Override any default via flags (`--scope all`, `--mode thinking`, `--context val
 
 The agent can ask "would this pass?" before writing the file to disk. Pass a draft in, get a verdict back, no disk write.
 
+In Claude Code:
+```
+/autoreview:validate --content-file /tmp/draft.ts --target-path src/api/users.ts
+```
+
+Or from any shell (after `init` has scaffolded `.autoreview/runtime/`):
 ```bash
-autoreview validate \
+node .autoreview/runtime/bin/validate.mjs \
   --content-file /tmp/draft.ts \
   --target-path src/api/users.ts
 ```
