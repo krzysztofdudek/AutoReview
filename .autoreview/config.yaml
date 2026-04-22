@@ -1,0 +1,41 @@
+version: "0.1"
+
+provider:
+  active: openai-compat
+  ollama:        { endpoint: "http://localhost:11434", model: "gemma4:e4b" }
+  claude-code:   { model: haiku }
+  codex:         { model: "gpt-5" }
+  gemini-cli:    { model: "gemini-2.5-flash" }
+  anthropic:     { model: "claude-haiku-4-5" }
+  openai:        { model: "gpt-4o-mini" }
+  google:        { model: "gemini-2.5-flash" }
+  openai-compat: { endpoint: "http://127.0.0.1:8080/v1", model: "unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit" }
+
+review:
+  evaluate: diff
+  mode: quick
+  reasoning_effort: medium
+  consensus: 1
+  intent_triggers: false
+  intent_trigger_budget: 50
+  context_window_bytes: auto
+  output_reserve_bytes: 2000
+  walk_file_cap: 10000
+  # remote_rules_auto_pull: false  # set to true to auto-pull missing remote rule caches on validate
+
+enforcement:
+  precommit: soft
+  validate: hard
+
+context_overrides:
+  precommit: { mode: quick, consensus: 1, scope: staged }
+  validate:  { mode: thinking, scope: uncommitted }
+
+rules:
+  enabled_extra: []
+  disabled: []
+
+remote_rules: []
+
+history:
+  log_to_file: true
