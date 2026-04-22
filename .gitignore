@@ -23,3 +23,6 @@ examples/*/.autoreview/.history/
 
 # E2E scratch (per-test throwaway git repos)
 tests/.e2e-scratch/
+
+# E2E agent-behavior workspaces (claude -p scenarios)
+.test/
