@@ -1,0 +1,50 @@
+# AutoReview CI template — drop into .github/workflows/autoreview.yml in your repo.
+# Runs the reviewer over uncommitted diffs on every PR. Exit 1 on rule reject = PR fails.
+#
+# Provider: default here is Ollama. Swap to a paid provider by replacing the Ollama steps
+# with an API-key secret and `ollama` is not needed. If you use Anthropic/OpenAI/Google,
+# skip the ollama install/pull/serve steps and set the relevant *_API_KEY secret on your
+# workflow. Cost scales with the number of PR files that match triggers × matched rules.
+#
+# To review a full PR (not just changed files), use `--scope all` — expensive on large repos.
+
+name: autoreview
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # AutoReview walks git history for --scope uncommitted/--sha
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Ollama (local reviewer — free, no API key needed)
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          sleep 3
+          ollama pull qwen2.5-coder:7b
+
+      - name: Pull remote rule sources
+        # Skip if your repo has no `remote_rules` configured.
+        run: node .autoreview/runtime/bin/validate.mjs --help >/dev/null || true
+        continue-on-error: true
+
+      - name: Review PR files under hard enforcement
+        # `--context validate` is hard by default → exit 1 on reject → PR fails.
+        # Swap scope to --scope all for a whole-repo sweep.
+        run: node .autoreview/runtime/bin/validate.mjs --scope uncommitted --mode thinking
+
+      # Paid provider alternative (comment out the ollama steps above and use this instead):
+      # - name: Review PR files
+      #   env:
+      #     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      #   run: node .autoreview/runtime/bin/validate.mjs --scope uncommitted --mode thinking

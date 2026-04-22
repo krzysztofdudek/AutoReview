@@ -1,6 +1,6 @@
 ---
 name: autoreview-context
-description: Use when the agent has a concrete file path (about to edit `src/api/users.ts`) and needs the rules that apply to THAT path. Triggers: "before I edit X, what rules apply?", a path reference without a review request, or "show me the rules". Skip when the agent wants an actual verdict (use autoreview-review); skip when no path yet and the user asks an abstract convention question (use autoreview-guide).
+description: Use when the agent has a concrete file path (about to edit `src/api/users.ts`) and needs the rules that apply to THAT path. Also use with no path to list all rule ids — triggers "what rules does this project have", "list all rules", "which rules exist", "show me the rules". Other triggers: "before I edit X, what rules apply?", a path reference without a review request. Skip when the agent wants an actual verdict (use autoreview-review); skip when no path yet and the user asks an abstract convention question (use autoreview-guide); skip when no `.autoreview/` exists — use autoreview-setup first.
 ---
 
 # AutoReview Context

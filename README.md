@@ -14,6 +14,23 @@ I built this after getting annoyed at my agent skipping audit logging on a payme
 
 A rules file is a suggestion. There are no consequences for ignoring it. This is the reviewer that turns it into a rule.
 
+## Quickstart
+
+```
+/plugin install autoreview
+/autoreview:init --provider ollama --install-precommit
+```
+
+That's it. `init` scaffolds `.autoreview/`, installs the git pre-commit hook, ships one example rule. Default provider is Ollama — install it first from https://ollama.ai if you haven't.
+
+Three things to know before your first commit:
+
+- **Soft by default.** Pre-commit warns on `[reject]` but still lets the commit through. Flip to blocking by setting `enforcement.precommit: hard` in `.autoreview/config.yaml`.
+- **Nothing runs until `init`.** Installing the plugin alone does nothing to your repo. If you see no verdicts on commit, run `init`.
+- **What leaves your machine.** Ollama keeps everything local. Paid providers (Anthropic/OpenAI/Google/openai-compat) receive the full file content plus the matching rule body on each call. Trigger matching runs locally — files that match no rule never leave the box.
+
+To add your first rule, just tell the agent: `"add a rule that forbids console.log in production code"` — it'll walk you through the 7-step wizard and save the rule at `.autoreview/rules/`.
+
 ## The problem
 
 You wrote rules in CLAUDE.md. Your agent applies maybe 70% of them. The rest it "optimizes away" because it decided they're noise. You tell it again, it does better for a while. Next session, same thing.
@@ -111,6 +128,29 @@ Agent:  Runs the 7-step wizard. Proposes a trigger, shows which files
 
 Commit. Hook runs. Done.
 
+## Escape hatches
+
+When a rule blocks something that shouldn't be blocked, three options in order of preference:
+
+1. **Suppress one site.** Add `// @autoreview-ignore <rule-id> <why>` above the offending block (or function, or file top). Reason is mandatory. The reviewer honors scope from where the marker sits — see the [Inline suppressions](#inline-suppressions) section below.
+2. **Soft mode for the session.** Flip `enforcement.precommit: soft` in `config.personal.yaml` (gitignored). You'll still see `[reject]` lines but commits won't block. Team stays on `hard` via `config.yaml`.
+3. **Last resort.** `git commit --no-verify` bypasses the hook entirely for one commit. Leaves no audit trail in history. Use for true emergencies.
+
+When a rule is plain wrong, edit it — rules are markdown. `.autoreview/rules/<id>.md` opens in any editor; delete the file to remove the rule; change the body to fix the check; change the `triggers:` line to narrow scope. `/autoreview:create-rule` runs the quality-guarded wizard for new rules, but editing existing ones is a plain file edit.
+
+## validate vs. pre-commit context
+
+Same engine, different defaults:
+
+| | pre-commit hook | `/autoreview:validate` |
+|---|---|---|
+| enforcement default | **soft** (warn, commit proceeds) | **hard** (reject exits 1) |
+| scope default | staged files only | uncommitted (staged + modified + untracked) |
+| mode default | quick (pass/fail only) | thinking (reason with file:line) |
+| consensus cap | always 1 (budget guard) | whatever config says |
+
+Override any default via flags (`--scope all`, `--mode thinking`, `--context validate`).
+
 ## Pre-check before the agent writes
 
 The agent can ask "would this pass?" before writing the file to disk. Pass a draft in, get a verdict back, no disk write.
@@ -198,6 +238,10 @@ remote_rules:
 ```
 
 `/autoreview:pull-remote` clones the pinned ref into `.autoreview/remote_rules/`. Set `review.remote_rules_auto_pull: true` to refresh on every review run.
+
+## CI integration
+
+Drop [templates/ci-github-actions.yml](templates/ci-github-actions.yml) into `.github/workflows/autoreview.yml`. It installs Ollama + Qwen, runs `validate.mjs --scope uncommitted --mode thinking` against PR diffs, fails the job on reject under hard enforcement. Swap the Ollama steps for an API-key secret to use Anthropic/OpenAI/Google.
 
 ## For teams
 
