@@ -115,12 +115,22 @@ export async function reviewFile(opts) {
     const duration_ms = Date.now() - start;
 
     const hasSuppressed = Array.isArray(vote.suppressed) && vote.suppressed.length > 0;
+    // Truncated content is asymmetric: satisfied=true on a partial file is unreliable
+    // (violation may sit in the cut-off tail), satisfied=false is trustworthy (the model
+    // actually spotted a problem in what it saw). Reject stays reject, pass gets demoted
+    // to an `error` verdict naming the truncation so users don't silently believe a
+    // big file passed when only the first ~155kB was judged.
+    const unreliablePass = fit.action === 'truncate' && vote.satisfied && !vote.providerError;
     let verdict;
     if (vote.providerError) verdict = 'error';
+    else if (unreliablePass) verdict = 'error';
     else if (vote.satisfied && hasSuppressed) verdict = 'suppressed';
     else verdict = vote.satisfied ? 'pass' : 'fail';
 
-    const rec = { rule: rule.id, verdict, reason: vote.reason ?? null, provider: provider.name, model: provider.model, mode, duration_ms };
+    const reason = unreliablePass
+      ? `truncated: reviewer saw only first ${Buffer.byteLength(fit.fileContent)} bytes of ${Buffer.byteLength(file.content)}; pass verdict on partial content is unreliable — bump review.context_window_bytes or split the file`
+      : (vote.reason ?? null);
+    const rec = { rule: rule.id, verdict, reason, provider: provider.name, model: provider.model, mode, duration_ms };
     if (vote.usage) rec.usage = vote.usage;
     if (hasSuppressed) {
       rec.suppressed = vote.suppressed.map(s => {

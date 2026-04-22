@@ -276,6 +276,47 @@ test('scope_hint from parser enriches suppressed records when line matches', asy
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('truncated file + satisfied=true -> verdict=error (no silent false-pass)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-rv-trunc-'));
+  try {
+    const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
+    // Force truncation: big file, tiny context window.
+    // Pick sizes such that file > available-budget but < 3× available → truncate branch.
+    // With context_window_bytes=16000 + reserve=500 + boilerplate ~1750 → available ~13700.
+    // 20000 bytes sits between 13700 and ~41000, so chunker should truncate.
+    const huge = 'a'.repeat(20000);
+    const cfg = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, context_window_bytes: 16000, output_reserve_bytes: 500 } };
+    const res = await reviewFile({
+      repoRoot: dir, config: cfg, rules: [rule],
+      file: { path: 'a.ts', content: huge },
+      diff: null, intentGate: null, historyEnabled: false,
+      _providerOverride: stubProviderClient({ satisfied: true, reason: 'looks fine' }),
+    });
+    assert.equal(res.verdicts[0].verdict, 'error');
+    assert.match(res.verdicts[0].reason, /truncated|partial content/i);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('truncated file + satisfied=false -> verdict=fail (violation is real)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-rv-trunc2-'));
+  try {
+    const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
+    // Pick sizes such that file > available-budget but < 3× available → truncate branch.
+    // With context_window_bytes=16000 + reserve=500 + boilerplate ~1750 → available ~13700.
+    // 20000 bytes sits between 13700 and ~41000, so chunker should truncate.
+    const huge = 'a'.repeat(20000);
+    const cfg = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, context_window_bytes: 16000, output_reserve_bytes: 500 } };
+    const res = await reviewFile({
+      repoRoot: dir, config: cfg, rules: [rule],
+      file: { path: 'a.ts', content: huge },
+      diff: null, intentGate: null, historyEnabled: false,
+      _providerOverride: stubProviderClient({ satisfied: false, reason: 'found violation at line 1' }),
+    });
+    assert.equal(res.verdicts[0].verdict, 'fail');
+    assert.match(res.verdicts[0].reason, /found violation/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('historyEnabled writes verdict + file-summary lines', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-h-'));
   try {
