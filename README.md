@@ -239,9 +239,11 @@ Per-rule override. Cheap model for trivial rules, stronger model for the one tha
 
 ## Modes
 
-**Quick** is pass/fail only. ~100 tokens out. Default for pre-commit.
+**Quick** is pass/fail only. `{"satisfied": true|false}` and nothing else. Default for pre-commit.
 
 **Thinking** returns `{satisfied, reason, suppressed[]}` with file:line references and configurable reasoning effort. Default for manual validate.
+
+Both modes share one output cap: `review.output_max_tokens`. Default `0` = no cap (models finish naturally). Raise only if you want to bound spend on a paid API.
 
 ## Inline suppressions
 
@@ -269,7 +271,7 @@ Personal config overrides repo config for any key. Switch provider on your machi
 Two knobs worth knowing about under `review:`:
 
 - `context_window_bytes` — defaults to `auto` (each adapter returns its best guess). `openai-compat` hard-codes 16 kB, way too small for modern long-context models. Override with the real byte budget: `160000` for Qwen3.6-35B, whatever your model actually supports. Too low and the chunker truncates or skips big files.
-- `output_max_tokens` — defaults to `0` = no cap. Local servers finish naturally, paid APIs use the provider's default. Raise it to force a ceiling on Anthropic/OpenAI spend; lower it for quick-mode dominant workflows.
+- `output_max_tokens` — defaults to `0` = no cap, in both quick and thinking mode. Local servers finish naturally, paid APIs use the provider's default. Raise it only to force a ceiling on Anthropic/OpenAI output-token spend.
 
 ## Remote rules
 

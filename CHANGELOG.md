@@ -24,10 +24,16 @@ All notable changes to AutoReview documented here. Format based on [Keep a Chang
 - `remote-rules-pull` preserved `path:` layout on `cp` so rule-loader's base matches the pulled tree.
 - Thinking-mode suppress + reasoning warnings go through `ctx.stderr` instead of `console.error`.
 - Prompt no longer requests `reason` on `satisfied=true`; parser drops it client-side too.
+- Quick-mode `maxTokens: 100` hardcode was too tight for reasoning-first models (Qwen, R1, o1) — their short reasoning trace exhausted the cap before the verdict JSON, producing silent `[error]` verdicts that let rule violations slip past hard enforcement. Unified both modes under a single `review.output_max_tokens` knob with default 0 = no cap. Adapters handle 0 per their API (omit field / `num_predict: -1` / 8192 fallback for Anthropic).
+- Truncated-file verdict no longer silently passes. When a file exceeds the context window but fits within 3× (chunker's truncate branch), a `satisfied: true` verdict on partial content is now promoted to `[error] truncated: reviewer saw only first N bytes of M — pass verdict on partial content is unreliable`. `satisfied: false` still counts as a real reject (violation found in what the reviewer saw).
+- README `autoreview validate …` shell example replaced with real invocations: `/autoreview:validate …` (Claude Code) + `node .autoreview/runtime/bin/validate.mjs …` (shell). The bare `autoreview` binary requires `npm install -g` which plugin-marketplace users don't do.
+- `[reject]` hint block `${AUTOREVIEW}` placeholder replaced with the real post-init path `node .autoreview/runtime/bin/validate.mjs`.
 
 ### Changed
 - Pre-commit hook template passes `"$@"` through to the CLI.
 - `init --upgrade` + `--precommit-{skip,append}` branches covered by tests.
+- `[reject]` lines under soft enforcement are now tagged `(warn-only — commit proceeds under soft enforcement)` so users don't mistake a soft-mode warning for a hard block.
+- `[reject]` hints now include `why (Claude Code)` + `why (shell)` + `skip:` + `edit:` + `help:` lines inline. Blocked users don't have to leave the terminal to know what to do.
 
 ## [0.1.0] — TBD
 

@@ -44,6 +44,7 @@ The reviewer is designed to never break your commit workflow because of its own 
 - **Internal tool errors in precommit → exit 0.** If the validate CLI crashes on an unhandled exception during a commit, it returns 0. Your commit still lands. See [`scripts/bin/validate.mjs`](scripts/bin/validate.mjs) outer `try/catch`.
 - **Session-start hook always returns 0**, with a 1-second timeout on the provider availability probe. Can't hang Claude Code's session.
 - **Consensus clamped to 1 in precommit** regardless of config, to prevent accidental N× fan-out on every commit ([`scripts/bin/validate.mjs`](scripts/bin/validate.mjs) line 82).
+- **Truncation never silently passes.** When a file is larger than the context window but still within 3× of it, the chunker truncates the tail. If the reviewer then returns `satisfied: true` on that partial view, the verdict is promoted to `[error] truncated: pass verdict on partial content is unreliable` — it is NOT recorded as pass. (`satisfied: false` on a truncated file is still a real reject — the reviewer spotted a problem in what it saw.) Raise `review.context_window_bytes` to fit the file, or split the file.
 
 Net result: AutoReview can only *warn*, not *crash*, your commit path — barring explicit opt-in to hard mode for real rule violations.
 
