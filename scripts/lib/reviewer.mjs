@@ -103,15 +103,13 @@ export async function reviewFile(opts) {
       mode, evaluate: resolveEvaluate(config, rule),
     });
     const start = Date.now();
-    // Quick mode: 500 tokens. Enough for "I'll just answer" models (gpt-4o, Claude)
-    // AND for reasoning-first models (Qwen, R1, o1) that emit a short trace before
-    // the verdict JSON. 100 (the old default) was too tight — reasoning models hit
-    // the cap before producing parseable output, yielding silent `error` verdicts.
-    // Thinking mode: honor `review.output_max_tokens`. 0 = no limit.
-    const thinkingMax = config.review.output_max_tokens ?? 0;
+    // Single output cap for both modes via `review.output_max_tokens`. Default 0 = no cap
+    // (adapters omit the field / use -1 / fall back to provider minimum where the API
+    // demands it). Reasoning-first models need headroom for their trace before the
+    // verdict JSON — hardcoded caps kept silently chopping their output.
     const vote = await voteConsensus(provider, prompt, {
       consensus: config.review.consensus,
-      maxTokens: mode === 'quick' ? 500 : thinkingMax,
+      maxTokens: config.review.output_max_tokens ?? 0,
       reasoningEffort: config.review.reasoning_effort,
     });
     const duration_ms = Date.now() - start;
