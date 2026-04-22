@@ -1,12 +1,23 @@
 # AutoReview CI template — drop into .github/workflows/autoreview.yml in your repo.
-# Runs the reviewer over uncommitted diffs on every PR. Exit 1 on rule reject = PR fails.
+# Runs the reviewer over PR diffs on every pull request. Exit 1 on rule reject = PR fails.
 #
-# Provider: default here is Ollama. Swap to a paid provider by replacing the Ollama steps
-# with an API-key secret and `ollama` is not needed. If you use Anthropic/OpenAI/Google,
-# skip the ollama install/pull/serve steps and set the relevant *_API_KEY secret on your
-# workflow. Cost scales with the number of PR files that match triggers × matched rules.
+# Why we clone AutoReview in CI:
+#   `/autoreview:init` installs a runtime copy at .autoreview/runtime/ on the developer's
+#   machine so pre-commit hooks work without Claude Code running. That runtime is
+#   gitignored — it's a mirror of the plugin source, not meant to be committed. So CI
+#   can't rely on it being in your repo checkout. Instead we clone AutoReview directly
+#   and invoke the reviewer from there.
 #
-# To review a full PR (not just changed files), use `--scope all` — expensive on large repos.
+# Provider: default is Ollama (local, free). Swap the Ollama install/pull/serve steps
+# for an API-key secret if you want Anthropic/OpenAI/Google (see the commented block
+# at the bottom). Cost scales with matched-files × matched-rules.
+#
+# Caveat: AutoReview's fail-open invariant (spec §22) means provider outages (Ollama
+# crashed, API unreachable, malformed response) produce [error] lines that DO NOT fail
+# the job. Only actual rule rejects exit 1. If you need the job to fail when the
+# reviewer itself is broken, add a grep step that counts [error] lines and fails if > 0.
+#
+# To review a full PR (not just changed files), use --scope all — expensive on large repos.
 
 name: autoreview
 
@@ -14,13 +25,26 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  # Match this to the AutoReview version your team uses. Bump in lockstep with
+  # `/plugin install autoreview@<ref>` on your developer machines.
+  AUTOREVIEW_REF: main
+
 jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout product repo
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0   # AutoReview walks git history for --scope uncommitted/--sha
+
+      - name: Checkout AutoReview runtime
+        # Cloned to /tmp/autoreview. NOT into the product repo. The user's .autoreview/
+        # (rules + config) lives at $GITHUB_WORKSPACE/.autoreview/ as usual.
+        run: |
+          git clone --depth 1 --branch ${{ env.AUTOREVIEW_REF }} \
+            https://github.com/krzysztofdudek/AutoReview /tmp/autoreview
 
       - uses: actions/setup-node@v4
         with:
@@ -42,17 +66,17 @@ jobs:
           ollama pull qwen2.5-coder:7b
 
       - name: Pull remote rule sources
-        # Skip the step entirely if your repo has no `remote_rules:` in .autoreview/config.yaml.
-        # `pull-remote` is a no-op when the config declares no sources, so it's safe to always run.
-        run: node .autoreview/runtime/bin/pull-remote.mjs
+        # No-op when the product repo has no `remote_rules:` configured — safe to always run.
+        run: node /tmp/autoreview/scripts/bin/pull-remote.mjs
 
       - name: Review PR files under hard enforcement
-        # `--context validate` is hard by default → exit 1 on reject → PR fails.
+        # `--context validate` is hard by default → exit 1 on rule reject → PR fails.
         # Swap scope to --scope all for a whole-repo sweep.
-        run: node .autoreview/runtime/bin/validate.mjs --scope uncommitted --mode thinking
+        run: node /tmp/autoreview/scripts/bin/validate.mjs --scope uncommitted --mode thinking
 
-      # Paid provider alternative (comment out the ollama + cache steps above and use this instead):
+      # Paid provider alternative: replace the Ollama install/pull/serve steps with:
       # - name: Review PR files
       #   env:
       #     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      #   run: node .autoreview/runtime/bin/validate.mjs --scope uncommitted --mode thinking
+      #   run: node /tmp/autoreview/scripts/bin/validate.mjs --scope uncommitted --mode thinking
+      # Remove `AUTOREVIEW_REF` env + the Ollama cache + install steps if going paid-only.

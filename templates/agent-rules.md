@@ -20,7 +20,11 @@ If the user asks "what does line 42 do?" or "is this validated?", read the file 
 The hook at `.git/hooks/pre-commit` ran automatically and produced the reject line. Don't re-run the hook. Use the `autoreview-review` skill to re-check the same rule in thinking mode to get a file:line reason. Then offer to fix the code or (only with explicit user okay) add a suppression.
 
 ## Reviewing a past commit
-If the user asks whether a specific commit passed, run `validate --sha <commit>`. Supports `HEAD`, `HEAD~1`, tags, branches, full SHAs.
+For "did this commit pass?" — **prefer `history --sha <commit>`** first. That reads `.autoreview/.history/*.jsonl` for what the reviewer already decided when the commit was reviewed. Free, no LLM calls.
+
+Only run `validate --sha <commit>` when the user explicitly wants a fresh re-review (rules changed, history log missing, debugging a verdict). `validate` costs tokens; `history` doesn't.
+
+Both support `HEAD`, `HEAD~1`, tags, branches, full SHAs.
 
 ## Validate vs. precommit
 - **Pre-commit hook** (soft-fail by default) runs on `git commit`. Stops you only when `enforcement.precommit: hard`.

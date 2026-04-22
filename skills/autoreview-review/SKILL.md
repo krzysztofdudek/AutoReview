@@ -1,6 +1,6 @@
 ---
 name: autoreview-review
-description: Use when user asks "does this pass review?", "does this file pass our rules", wrapping up feature work before a commit, when a commit got blocked OR rejected by the pre-commit hook (any "[reject]", "commit rejected", "why is my commit failing", "my commit is being blocked" phrasing), or when debugging a specific rule verdict. Runs the real LLM reviewer. Skip when no `.autoreview/` exists — use autoreview-setup.
+description: Use when user asks "does this pass review?", "does this file pass our rules", wrapping up feature work before a commit, when a commit got blocked OR rejected by the pre-commit hook (any "[reject]", "commit rejected", "commit being rejected", "why is my commit being rejected", "why is my commit failing", "my commit is being blocked" phrasing), or when debugging a specific rule verdict. Runs the real LLM reviewer. Skip when no `.autoreview/` exists — use autoreview-setup.
 ---
 
 # AutoReview Review

@@ -81,6 +81,22 @@ Log rejection with correlation-id.
 
 Trigger picks the files. Body is the rule in plain English. That's the whole format.
 
+## Trigger DSL cheatsheet
+
+All triggers are evaluated locally (zero LLM cost) before the reviewer runs. Supported predicates and operators:
+
+| Syntax | Meaning | Example |
+|---|---|---|
+| `path:"<glob>"` | match repo-relative path | `path:"src/api/**/*.ts"` |
+| `dir:"<path>"` | shorthand for `path:"<path>/**"` | `dir:"src/api"` |
+| `content:"<regex>"` | JavaScript regex against file contents | `content:"@Controller"` |
+| `AND` / `OR` / `NOT` | boolean operators (case-insensitive) | `path:"**/*.ts" AND content:"fetch\\("` |
+| `( ... )` | grouping | `(dir:"src" OR dir:"lib") AND NOT path:"**/*.test.ts"` |
+| `{a,b,c}` | brace expansion inside globs | `path:"src/{api,handlers}/**/*.ts"` |
+| `**` | match zero or more path segments | `path:"src/**/*.ts"` (any depth) |
+
+Use `/autoreview:check-breadth --expr '<your-trigger>'` to see how many files it hits before you save the rule. REDoS-prone regexes (`(a+)+`) are rejected at compile time; oversized binary files are auto-skipped for `content:` predicates.
+
 ## What happens on commit
 
 ```
@@ -266,6 +282,10 @@ Rules live in your repo. Personal config lives on your machine. API keys live in
 - Pull remote rules from a shared git repo. One team manages standards, many product repos use them.
 - Override per-developer in `config.personal.yaml` without touching the team config. Swap reviewer, raise reasoning effort, enable extra rules locally.
 - History log records provider, model, rule, verdict, and reason per review. Audit trail for every run.
+
+**Onboarding a new dev.** After `git clone`, each developer runs `/autoreview:init --upgrade --install-precommit` once. The `--upgrade` is safe on an already-init'd clone; without it, init bails out assuming setup is already done. If the repo already uses Husky or another pre-commit manager, pass `--precommit-append` so AutoReview's hook runs alongside the existing one instead of replacing it.
+
+**Centralized audit trail.** The history log (`.autoreview/.history/*.jsonl`) is gitignored by default — it's per-machine. For a team-wide view, upload the jsonl from CI as an artifact or ship it to a log aggregator. Records carry `actor` (git email), `host`, `ci_run_id`, `commit_sha`, and token `usage` so you can aggregate spend and attribute verdicts across machines.
 
 ## Exit codes
 

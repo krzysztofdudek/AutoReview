@@ -180,7 +180,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
       _state: reviewState,
       stderr,
     });
-    reportVerdicts(entry, verdicts, cfg.review.mode, stderr);
+    reportVerdicts(entry, verdicts, cfg.review.mode, stderr, { softContext: enforcement === 'soft' });
     for (const v of verdicts) {
       if (v.verdict === 'fail') { hardFailure = true; rejectCount++; }
       // Spec §22: provider errors (missing key, unreachable daemon) must NOT block.
