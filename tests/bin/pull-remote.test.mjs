@@ -14,29 +14,31 @@ function capture() {
 
 async function mkFakeRemote() {
   const dir = await mkdtemp(join(tmpdir(), 'ar-remote-'));
-  spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
-  spawnSync('git', ['config', 'user.email', 't@t'], { cwd: dir });
-  spawnSync('git', ['config', 'user.name', 't'], { cwd: dir });
+  const run = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+  run('init', '-q', '-b', 'main');
+  run('config', 'user.email', 't@t');
+  run('config', 'user.name', 't');
   await mkdir(join(dir, 'rules'), { recursive: true });
   await writeFile(join(dir, 'rules/a.md'), '---\nname: A\ntriggers: \'path:"**"\'\n---\nbody');
-  spawnSync('git', ['add', '.'], { cwd: dir });
-  spawnSync('git', ['commit', '-q', '-m', 'init'], { cwd: dir });
-  spawnSync('git', ['tag', 'v1'], { cwd: dir });
-  return dir;
+  run('add', '.');
+  run('commit', '-q', '-m', 'init');
+  run('tag', 'v1');
+  return { dir, run, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 
 async function mkUserRepo() {
   const dir = await mkdtemp(join(tmpdir(), 'ar-user-'));
-  spawnSync('git', ['init', '-q'], { cwd: dir });
-  spawnSync('git', ['config', 'user.email', 't@t'], { cwd: dir });
-  spawnSync('git', ['config', 'user.name', 't'], { cwd: dir });
-  spawnSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: dir });
-  return dir;
+  const run = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+  run('init', '-q');
+  run('config', 'user.email', 't@t');
+  run('config', 'user.name', 't');
+  run('commit', '-q', '--allow-empty', '-m', 'init');
+  return { dir, run, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 
 test('pullSource: fresh pull creates target + sentinel', async () => {
-  const remote = await mkFakeRemote();
-  const user = await mkUserRepo();
+  const { dir: remote, cleanup: cleanupRemote } = await mkFakeRemote();
+  const { dir: user, cleanup: cleanupUser } = await mkUserRepo();
   try {
     await pullSource({
       repoRoot: user,
@@ -51,14 +53,14 @@ test('pullSource: fresh pull creates target + sentinel', async () => {
     const rule = await readFile(join(target, 'rules/a.md'), 'utf8');
     assert.match(rule, /name: A/);
   } finally {
-    await rm(remote, { recursive: true, force: true });
-    await rm(user, { recursive: true, force: true });
+    await cleanupRemote();
+    await cleanupUser();
   }
 });
 
 test('pullSource: re-pull with sentinel wipes and replaces', async () => {
-  const remote = await mkFakeRemote();
-  const user = await mkUserRepo();
+  const { dir: remote, cleanup: cleanupRemote } = await mkFakeRemote();
+  const { dir: user, cleanup: cleanupUser } = await mkUserRepo();
   try {
     const src = { name: 'shared', url: remote, ref: 'v1', path: 'rules' };
     await pullSource({ repoRoot: user, source: src });
@@ -68,13 +70,13 @@ test('pullSource: re-pull with sentinel wipes and replaces', async () => {
     const s = await stat(join(target, '.autoreview-managed'));
     assert.ok(s.isFile());
   } finally {
-    await rm(remote, { recursive: true, force: true });
-    await rm(user, { recursive: true, force: true });
+    await cleanupRemote();
+    await cleanupUser();
   }
 });
 
 test('pullSource: pre-existing non-md content refuses wipe', async () => {
-  const user = await mkUserRepo();
+  const { dir: user, cleanup: cleanupUser } = await mkUserRepo();
   const target = join(user, '.autoreview/remote_rules/shared/v1');
   try {
     await mkdir(target, { recursive: true });
@@ -83,11 +85,11 @@ test('pullSource: pre-existing non-md content refuses wipe', async () => {
       () => pullSource({ repoRoot: user, source: { name: 'shared', url: '/nowhere', ref: 'v1', path: '.' } }),
       /refuse wipe|non-md/,
     );
-  } finally { await rm(user, { recursive: true, force: true }); }
+  } finally { await cleanupUser(); }
 });
 
 test('run(): no sources warns cleanly', async () => {
-  const user = await mkUserRepo();
+  const { dir: user, cleanup: cleanupUser } = await mkUserRepo();
   try {
     await mkdir(join(user, '.autoreview'), { recursive: true });
     await writeFile(join(user, '.autoreview/config.yaml'), 'provider:\n  active: ollama\n');
@@ -95,5 +97,5 @@ test('run(): no sources warns cleanly', async () => {
     const code = await run([], { cwd: user, env: process.env, ...c });
     assert.equal(code, 0);
     assert.match(c.err(), /no remote sources/);
-  } finally { await rm(user, { recursive: true, force: true }); }
+  } finally { await cleanupUser(); }
 });

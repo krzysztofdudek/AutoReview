@@ -56,7 +56,8 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
 
   const start = Date.now();
   const result = await provider.verify(prompt, {
-    maxTokens: mode === 'quick' ? 100 : 2000,
+    // 0 = no limit (adapters handle). Config default is 0.
+    maxTokens: mode === 'quick' ? 100 : (cfg.review.output_max_tokens ?? 0),
     reasoningEffort: cfg.review.reasoning_effort,
   });
   const duration = Date.now() - start;

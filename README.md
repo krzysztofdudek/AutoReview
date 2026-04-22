@@ -180,6 +180,11 @@ Three files:
 
 Personal config overrides repo config for any key. Switch provider on your machine, enable intent triggers locally, whatever.
 
+Two knobs worth knowing about under `review:`:
+
+- `context_window_bytes` — defaults to `auto` (each adapter returns its best guess). `openai-compat` hard-codes 16 kB, way too small for modern long-context models. Override with the real byte budget: `160000` for Qwen3.6-35B, whatever your model actually supports. Too low and the chunker truncates or skips big files.
+- `output_max_tokens` — defaults to `0` = no cap. Local servers finish naturally, paid APIs use the provider's default. Raise it to force a ceiling on Anthropic/OpenAI spend; lower it for quick-mode dominant workflows.
+
 ## Remote rules
 
 One team maintains shared rules in a single repo. Every product repo pins a tag and pulls them in. Update the tag to roll out changes.

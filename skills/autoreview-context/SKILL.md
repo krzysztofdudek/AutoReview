@@ -1,6 +1,6 @@
 ---
 name: autoreview-context
-description: Use when the agent has a concrete file path (about to edit `src/api/users.ts`) and needs to discover which rules apply to THAT path. Returns `read:` pointers — not review verdicts. Free (no LLM call). Invoke BEFORE writing to or creating a file. If no path given, lists all rule ids. Useful when user asks 'show me the rules'.
+description: Use when the agent has a concrete file path (about to edit `src/api/users.ts`) and needs the rules that apply to THAT path. Triggers: "before I edit X, what rules apply?", a path reference without a review request, or "show me the rules". Skip when the agent wants an actual verdict (use autoreview-review); skip when no path yet and the user asks an abstract convention question (use autoreview-guide).
 ---
 
 # AutoReview Context

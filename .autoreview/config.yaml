@@ -18,8 +18,9 @@ review:
   consensus: 1
   intent_triggers: false
   intent_trigger_budget: 50
-  context_window_bytes: auto
+  context_window_bytes: 160000   # ~40k tokens; override openai-compat's conservative 16384 default for Qwen3.6-35B
   output_reserve_bytes: 2000
+  output_max_tokens: 0   # 0 = no cap; local Qwen MLX has no billing, let the model finish
   walk_file_cap: 10000
   # remote_rules_auto_pull: false  # set to true to auto-pull missing remote rule caches on validate
 

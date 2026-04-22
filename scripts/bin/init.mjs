@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // scripts/bin/init.mjs
-import { cp, mkdir, stat, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, stat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from '../lib/args.mjs';
 import { repoRoot, installPrecommit, gitignoreEnsure } from '../lib/git-utils.mjs';
-import { pluginRoot, readFileOrNull } from '../lib/fs-utils.mjs';
+import { pluginRoot, readFileOrNull, writeAtomic } from '../lib/fs-utils.mjs';
 import { request } from '../lib/http-client.mjs';
 import { pullSource } from '../lib/remote-rules-pull.mjs';
 import { parse as parseYaml } from '../lib/yaml-min.mjs';
@@ -91,7 +91,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     ?? `version: "0.1"\nprovider:\n  active: ${chosen}\n`;
   // Inject active provider into the repo template if it's the default.
   const repoConfig = repoTemplate.replace(/provider:\s*\n\s*active:\s*\w[\w-]*/, `provider:\n  active: ${chosen}`);
-  await writeFile(join(autoreview, 'config.yaml'), repoConfig);
+  await writeAtomic(join(autoreview, 'config.yaml'), repoConfig);
 
   // §24: auto-pull declared remote sources so the first review run has a cache.
   try {
@@ -111,11 +111,11 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
 
   const personalTemplate = await readFileOrNull(join(root_plugin, 'templates/config-personal.yaml'))
     ?? '# Personal overrides. Gitignored.\n';
-  await writeFile(join(autoreview, 'config.personal.yaml'), personalTemplate);
+  await writeAtomic(join(autoreview, 'config.personal.yaml'), personalTemplate);
 
   const secretsTemplate = await readFileOrNull(join(root_plugin, 'templates/config-secrets.yaml'))
     ?? '# Fill in API keys. Gitignored.\n';
-  await writeFile(join(autoreview, 'config.secrets.yaml'), secretsTemplate);
+  await writeAtomic(join(autoreview, 'config.secrets.yaml'), secretsTemplate);
 
   // Step 8: gitignore
   await gitignoreEnsure(root, [
@@ -137,12 +137,12 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     } else if (status === 'exists-different') {
       const existingBody = await readFile(join(root, '.git/hooks/pre-commit'), 'utf8');
       if (values['precommit-overwrite']) {
-        await writeFile(join(root, '.git/hooks/pre-commit'), precommitBody);
+        await writeAtomic(join(root, '.git/hooks/pre-commit'), precommitBody);
         stdout.write('pre-commit hook overwritten.\n');
       } else if (values['precommit-skip']) {
         stdout.write('pre-commit hook: kept existing.\n');
       } else if (values['precommit-append']) {
-        await writeFile(join(root, '.git/hooks/pre-commit'), existingBody + '\n' + precommitBody);
+        await writeAtomic(join(root, '.git/hooks/pre-commit'), existingBody + '\n' + precommitBody);
         stdout.write('pre-commit hook appended.\n');
       } else {
         stdout.write(`existing hook:\n${existingBody}\n\nproposed hook:\n${precommitBody}\n`);
@@ -164,7 +164,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   // Step 11: example rule
   if (!values['skip-example']) {
     const example = await readFileOrNull(join(root_plugin, 'templates/example-rule.md'));
-    if (example) await writeFile(join(autoreview, 'rules/example.md'), example);
+    if (example) await writeAtomic(join(autoreview, 'rules/example.md'), example);
   }
 
   stdout.write(`\n.autoreview/ initialized with provider=${chosen}.\nNext: /autoreview:create-rule or /autoreview:validate\n`);

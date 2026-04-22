@@ -1,5 +1,5 @@
 // scripts/lib/prompt-builder.mjs
-export const PROMPT_BOILERPLATE_BYTES = 1250;
+export const PROMPT_BOILERPLATE_BYTES = 1750;
 
 const TASK_BODY = `You verify whether a source file satisfies a rule.
 Check every statement in the rule against the code.
@@ -12,8 +12,9 @@ Mode: {mode}
   - quick: output exactly {"satisfied": true|false}
   - thinking:
       if satisfied=true  → output EXACTLY {"satisfied": true}. Do NOT add "reason". Do NOT add any other field unless a suppression marker below applies. One token of explanation is a bug.
-      if satisfied=false → output {"satisfied": false, "reason": "explanation with file:line refs"}
-      if any honored @autoreview-ignore marker applies (regardless of satisfied), add "suppressed": [{"line": N, "reason": "..."}]
+      if satisfied=false → output {"satisfied": false, "reason": "<YOUR CONCRETE EXPLANATION HERE, citing file:line>"}
+        where <YOUR CONCRETE EXPLANATION HERE, citing file:line> is REPLACED with your actual finding — e.g. "line 47 uses writeFile for .gitignore, must be writeAtomic". Do NOT copy the placeholder text literally. An empty, missing, or placeholder-echoed reason is a bug.
+      if any honored @autoreview-ignore marker applies (regardless of satisfied), add "suppressed": [{"line": N, "reason": "<author's reason from the marker>"}]
 
 Honor \`@autoreview-ignore <rule-id> <reason>\` comments in the code — treat suppressed
 code as satisfied. The comment applies contextually (function / class / block / file-top).

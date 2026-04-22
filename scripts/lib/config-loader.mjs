@@ -29,6 +29,10 @@ export const DEFAULT_CONFIG = {
     output_reserve_bytes: 2000,
     walk_file_cap: 10000,
     remote_rules_auto_pull: false,
+    // 0 = no limit — provider uses its own default (remaining context for local servers,
+    // adapter fallback ~8k for providers that require the field like Anthropic).
+    // Bump for long thinking traces on big files, or cap for paid APIs to control spend.
+    output_max_tokens: 0,
   },
   enforcement: { precommit: 'soft', validate: 'hard' },
   context_overrides: {

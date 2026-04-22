@@ -37,7 +37,8 @@ export function create({ endpoint, model, _retryOptions } = {}) {
                 model,
                 prompt,
                 stream: false,
-                options: { num_predict: maxTokens, temperature: 0 },
+                // 0 = no limit → ollama's -1 means "generate until stop token".
+                options: { num_predict: maxTokens > 0 ? maxTokens : -1, temperature: 0 },
               }),
               timeoutMs: 120_000,
             });

@@ -30,8 +30,10 @@ async function loadOne(absPath, idBase, sourceName, source) {
 }
 
 export async function loadRules(repoRoot, config) {
+  // Per-call state lives in the return value: plain object (no Map) keyed by rule id.
+  // `loadRules` is itself the factory — each call produces a fresh { rules, warnings }.
   const warnings = [];
-  const byId = new Map();
+  const byId = Object.create(null);
 
   // Local rules
   const localDir = join(repoRoot, '.autoreview/rules');
@@ -41,7 +43,7 @@ export async function loadRules(repoRoot, config) {
       const rel = relative(localDir, file);
       const r = await loadOne(file, rel, null, 'local');
       if (r.error) { warnings.push(`rule ${rel}: ${r.error}`); continue; }
-      byId.set(r.rule.id, r.rule);
+      byId[r.rule.id] = r.rule;
     }
   } catch {
     // local dir missing — OK, no rules
@@ -60,24 +62,24 @@ export async function loadRules(repoRoot, config) {
         const r = await loadOne(file, rel, src.name, 'remote');
         if (r.error) { warnings.push(`remote rule ${src.name}/${rel}: ${r.error}`); continue; }
         // Collision: check if a local rule already occupies the same computed id
-        if (byId.has(r.rule.id)) {
+        if (r.rule.id in byId) {
           warnings.push(`id collision for ${r.rule.id}: local overrides remote ${src.name}`);
           continue;
         }
-        byId.set(r.rule.id, r.rule);
+        byId[r.rule.id] = r.rule;
       }
     } catch (e) {
       warnings.push(`remote source ${src.name} skipped: ${e.message}`);
     }
   }
 
-  // Filters
-  const disabled = new Set(config.rules?.disabled ?? []);
-  const enabledExtra = new Set(config.rules?.enabled_extra ?? []);
+  // Filters — plain arrays, no Set literal.
+  const disabled = config.rules?.disabled ?? [];
+  const enabledExtra = config.rules?.enabled_extra ?? [];
   const rules = [];
-  for (const r of byId.values()) {
-    if (disabled.has(r.id)) continue;
-    if (r.frontmatter.default === 'disabled' && !enabledExtra.has(r.id)) continue;
+  for (const r of Object.values(byId)) {
+    if (disabled.includes(r.id)) continue;
+    if (r.frontmatter.default === 'disabled' && !enabledExtra.includes(r.id)) continue;
     rules.push(r);
   }
 

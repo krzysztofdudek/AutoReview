@@ -1,6 +1,6 @@
 ---
 name: autoreview-setup
-description: Initialize AutoReview in a project, configure provider, install git pre-commit hook. Triggered by "setup autoreview", "init autoreview", or when `.autoreview/` is missing and the user wants code review.
+description: Use when the user asks to set up AutoReview in the repo ("setup autoreview", "init autoreview", "add autoreview here") or when `.autoreview/` is missing and the user wants code review. Also triggers when the agent notices no config but rules are being discussed. Skip when `.autoreview/` already exists and the user is not asking for a reset (use autoreview-create-rule instead to add rules).
 ---
 
 # AutoReview Setup

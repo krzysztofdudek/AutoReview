@@ -10,6 +10,7 @@ import { getProvider } from '../lib/provider-client.mjs';
 import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchForContent } from '../lib/trigger-engine.mjs';
 import { renderRule, saveRule } from '../lib/rule-authoring.mjs';
 import { walk, isBinary, sizeOf } from '../lib/fs-utils.mjs';
+import { reviewFile } from '../lib/reviewer.mjs';
 import { relative, resolve as resolvePath, isAbsolute } from 'node:path';
 
 function resolveCliPath(cwd, p) {
@@ -87,7 +88,6 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
       stderr.write('[error] test-drive requires --rule-body --triggers --files\n'); return 1;
     }
     const body = await readFile(resolveCliPath(cwd, values['rule-body']), 'utf8');
-    const { reviewFile } = await import('../lib/reviewer.mjs');
     const ephemeral = {
       id: 'ephemeral',
       source: 'local', sourceName: null, path: values['rule-body'],

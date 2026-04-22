@@ -10,10 +10,11 @@ export function create({ model, apiKey, url = 'https://api.openai.com/v1/chat/co
       if (!apiKey) return { satisfied: false, providerError: true, raw: 'no api key' };
       const body = {
         model,
-        max_tokens: maxTokens,
         temperature: 0,
         messages: [{ role: 'user', content: prompt }],
       };
+      // 0 = no explicit cap; omit to let the server/model pick its own ceiling.
+      if (maxTokens > 0) body.max_tokens = maxTokens;
       if (reasoningEffort) body.reasoning_effort = reasoningEffort;
       try {
         const r = await withRetry(async () => {

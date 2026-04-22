@@ -1,8 +1,9 @@
 // scripts/lib/rule-authoring.mjs
 // Rule authoring helpers — rendering YAML frontmatter + writing file.
 
-import { writeFile, mkdir } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { join, dirname, resolve, isAbsolute } from 'node:path';
+import { writeAtomic } from './fs-utils.mjs';
 
 function validateRelativePath(relativePath) {
   if (typeof relativePath !== 'string' || relativePath.length === 0) {
@@ -41,6 +42,6 @@ export async function saveRule({ repoRoot, relativePath, content }) {
     throw new Error(`relativePath escapes .autoreview/rules: ${relativePath}`);
   }
   await mkdir(dirname(abs), { recursive: true });
-  await writeFile(abs, content);
+  await writeAtomic(abs, content);
   return abs;
 }

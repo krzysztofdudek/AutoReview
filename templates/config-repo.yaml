@@ -20,6 +20,7 @@ review:
   intent_trigger_budget: 50
   context_window_bytes: auto
   output_reserve_bytes: 2000
+  output_max_tokens: 0   # 0 = no cap (adapters omit the field). Raise to cap spend on paid APIs.
   walk_file_cap: 10000
   # remote_rules_auto_pull: false  # set to true to auto-pull missing remote rule caches on validate
 

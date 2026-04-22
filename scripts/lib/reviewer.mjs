@@ -103,9 +103,13 @@ export async function reviewFile(opts) {
       mode, evaluate: resolveEvaluate(config, rule),
     });
     const start = Date.now();
+    // Quick mode: always ~100 tokens (just the verdict JSON).
+    // Thinking mode: honor `review.output_max_tokens`. 0 = no limit (adapters omit the field
+    // or fall back to their minimum required by the API).
+    const thinkingMax = config.review.output_max_tokens ?? 0;
     const vote = await voteConsensus(provider, prompt, {
       consensus: config.review.consensus,
-      maxTokens: mode === 'quick' ? 100 : 2000,
+      maxTokens: mode === 'quick' ? 100 : thinkingMax,
       reasoningEffort: config.review.reasoning_effort,
     });
     const duration_ms = Date.now() - start;

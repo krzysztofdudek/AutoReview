@@ -13,7 +13,9 @@ export function create({ model, apiKey, url = DEFAULT_URL }) {
       if (!apiKey) return { satisfied: false, providerError: true, raw: 'no api key' };
       const body = {
         model,
-        max_tokens: maxTokens,
+        // Anthropic REQUIRES max_tokens. 0 (= user "no limit") falls back to a
+        // generous default that still caps runaway billing — raise via config if needed.
+        max_tokens: maxTokens > 0 ? maxTokens : 8192,
         messages: [{ role: 'user', content: prompt }],
       };
       if (reasoningEffort && THINK_BUDGETS[reasoningEffort]) {

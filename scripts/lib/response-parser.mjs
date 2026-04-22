@@ -1,4 +1,7 @@
 // 4-tier fallback JSON extraction for provider responses.
+// Each tier yields a candidate; we accept the LAST candidate that has a `satisfied` key
+// (models often quote the input file's JSON before emitting the verdict — we must not
+// pick up the quoted input as the verdict object).
 
 export function parseResponse(raw) {
   if (!raw || typeof raw !== 'string') return { satisfied: false, providerError: true, raw };
@@ -6,36 +9,50 @@ export function parseResponse(raw) {
 
   // Tier 1: direct parse
   try {
-    return normalize(JSON.parse(trimmed), raw);
+    const obj = JSON.parse(trimmed);
+    if (hasSatisfiedKey(obj)) return normalize(obj, raw);
   } catch {}
 
-  // Tier 2: markdown fence
-  const fence = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-  if (fence) {
+  // Tier 2: every markdown fence — pick the LAST with a `satisfied` key.
+  const fenceMatches = [...trimmed.matchAll(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/g)];
+  let fenceVerdict = null;
+  for (const m of fenceMatches) {
     try {
-      return normalize(JSON.parse(fence[1].trim()), raw);
+      const obj = JSON.parse(m[1].trim());
+      if (hasSatisfiedKey(obj)) fenceVerdict = obj;
     } catch {}
   }
+  if (fenceVerdict) return normalize(fenceVerdict, raw);
 
-  // Tier 3: first balanced-brace object
-  const firstBrace = trimmed.indexOf('{');
-  if (firstBrace !== -1) {
-    const slice = balancedObject(trimmed, firstBrace);
-    if (slice) {
-      try {
-        return normalize(JSON.parse(slice), raw);
-      } catch {}
-    }
+  // Tier 3: every balanced-brace object — pick the LAST with a `satisfied` key.
+  let braceVerdict = null;
+  let i = 0;
+  while (i < trimmed.length) {
+    const open = trimmed.indexOf('{', i);
+    if (open === -1) break;
+    const slice = balancedObject(trimmed, open);
+    if (!slice) break;
+    try {
+      const obj = JSON.parse(slice);
+      if (hasSatisfiedKey(obj)) braceVerdict = obj;
+    } catch {}
+    i = open + slice.length;
   }
+  if (braceVerdict) return normalize(braceVerdict, raw);
 
-  // Tier 4: keyword fallback
-  const lower = trimmed.toLowerCase();
-  const hasNot = /\bnot\s+satisfied\b/.test(lower);
-  const hasSatisfied = /\bsatisfied\b/.test(lower);
-  if (hasNot) return { satisfied: false, reason: trimmed.slice(0, 200) };
+  // Tier 4: keyword fallback — look at the TAIL of the raw text (last 500 chars), which is
+  // where a reasoning trace typically ends with the verdict.
+  const tail = trimmed.slice(-500).toLowerCase();
+  const hasNot = /\bnot\s+satisfied\b|satisfied[^\n]{0,20}false/.test(tail);
+  const hasSatisfied = /\bsatisfied\b/.test(tail);
+  if (hasNot) return { satisfied: false, reason: trimmed.slice(-200) };
   if (hasSatisfied) return { satisfied: true };
 
   return { satisfied: false, providerError: true, raw };
+}
+
+function hasSatisfiedKey(obj) {
+  return obj != null && typeof obj === 'object' && !Array.isArray(obj) && 'satisfied' in obj;
 }
 
 function balancedObject(s, start) {

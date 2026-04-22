@@ -37,6 +37,7 @@ async function mkPluginRoot() {
   await mkdir(join(dir, 'templates'), { recursive: true });
   await mkdir(join(dir, 'scripts/lib/providers'), { recursive: true });
   await mkdir(join(dir, 'scripts/bin'), { recursive: true });
+  const cleanup = () => rm(dir, { recursive: true, force: true });
   // Template files
   await writeFile(join(dir, 'templates/config-repo.yaml'), 'version: "0.1"\nprovider:\n  active: ollama\n');
   await writeFile(join(dir, 'templates/config-personal.yaml'), '# personal\n');
@@ -46,12 +47,12 @@ async function mkPluginRoot() {
   // Minimal scripts/lib + bin to copy into runtime
   await writeFile(join(dir, 'scripts/lib/dummy.mjs'), 'export const x = 1;\n');
   await writeFile(join(dir, 'scripts/bin/validate.mjs'), 'export const run = () => 0;\n');
-  return dir;
+  return { dir, cleanup };
 }
 
 test('init --provider ollama scaffolds .autoreview and precommit when --install-precommit passed', async () => {
   const { dir, cleanup } = await mkRepo();
-  const pluginDir = await mkPluginRoot();
+  const { dir: pluginDir, cleanup: cleanupPlugin } = await mkPluginRoot();
   try {
     const c = capture();
     const code = await run(['--provider', 'ollama', '--install-precommit'], {
@@ -65,13 +66,13 @@ test('init --provider ollama scaffolds .autoreview and precommit when --install-
     await stat(join(dir, '.git/hooks/pre-commit'));
   } finally {
     await cleanup();
-    await rm(pluginDir, { recursive: true, force: true });
+    await cleanupPlugin();
   }
 });
 
 test('init without --install-precommit does NOT create pre-commit hook', async () => {
   const { dir, cleanup } = await mkRepo();
-  const pluginDir = await mkPluginRoot();
+  const { dir: pluginDir, cleanup: cleanupPlugin } = await mkPluginRoot();
   try {
     const c = capture();
     const code = await run(['--provider', 'ollama'], {
@@ -85,13 +86,13 @@ test('init without --install-precommit does NOT create pre-commit hook', async (
     assert.match(c.out(), /NOT installed/);
   } finally {
     await cleanup();
-    await rm(pluginDir, { recursive: true, force: true });
+    await cleanupPlugin();
   }
 });
 
 test('re-running without --upgrade is a no-op warning', async () => {
   const { dir, cleanup } = await mkRepo();
-  const pluginDir = await mkPluginRoot();
+  const { dir: pluginDir, cleanup: cleanupPlugin } = await mkPluginRoot();
   try {
     const c1 = capture();
     await run(['--provider', 'ollama'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir }, ...c1 });
@@ -101,13 +102,13 @@ test('re-running without --upgrade is a no-op warning', async () => {
     assert.match(c2.err(), /already exists/);
   } finally {
     await cleanup();
-    await rm(pluginDir, { recursive: true, force: true });
+    await cleanupPlugin();
   }
 });
 
 test('existing different pre-commit hook without flag exits 1', async () => {
   const { dir, cleanup } = await mkRepo();
-  const pluginDir = await mkPluginRoot();
+  const { dir: pluginDir, cleanup: cleanupPlugin } = await mkPluginRoot();
   try {
     await writeFile(join(dir, '.git/hooks/pre-commit'), '#!/bin/sh\n# custom hook\n');
     await chmod(join(dir, '.git/hooks/pre-commit'), 0o755);
@@ -117,13 +118,13 @@ test('existing different pre-commit hook without flag exits 1', async () => {
     assert.match(c.err(), /--precommit-(overwrite|skip|append)/);
   } finally {
     await cleanup();
-    await rm(pluginDir, { recursive: true, force: true });
+    await cleanupPlugin();
   }
 });
 
 test('.gitignore appended without duplicates', async () => {
   const { dir, cleanup } = await mkRepo();
-  const pluginDir = await mkPluginRoot();
+  const { dir: pluginDir, cleanup: cleanupPlugin } = await mkPluginRoot();
   try {
     const c1 = capture();
     await run(['--provider', 'ollama'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir }, ...c1 });
@@ -133,7 +134,7 @@ test('.gitignore appended without duplicates', async () => {
     assert.equal((body.match(/\.autoreview\/\.history\//g) || []).length, 1);
   } finally {
     await cleanup();
-    await rm(pluginDir, { recursive: true, force: true });
+    await cleanupPlugin();
   }
 });
 
@@ -149,7 +150,7 @@ test('errors on unknown provider', async () => {
 
 test('warns when paid provider chosen without API key (§11)', async () => {
   const { dir, cleanup } = await mkRepo();
-  const pluginDir = await mkPluginRoot();
+  const { dir: pluginDir, cleanup: cleanupPlugin } = await mkPluginRoot();
   try {
     const c = capture();
     const code = await run(['--provider', 'anthropic'], {
@@ -161,13 +162,13 @@ test('warns when paid provider chosen without API key (§11)', async () => {
     assert.match(c.err(), /requires an API key/i);
   } finally {
     await cleanup();
-    await rm(pluginDir, { recursive: true, force: true });
+    await cleanupPlugin();
   }
 });
 
 test('init auto-pulls remote_rules declared in template', async () => {
   const { dir, cleanup } = await mkRepo();
-  const pluginDir = await mkPluginRoot();
+  const { dir: pluginDir, cleanup: cleanupPlugin } = await mkPluginRoot();
   // Create a fake local bare remote to clone from
   const remoteDir = await mkdtemp(join(tmpdir(), 'ar-remote-'));
   spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: remoteDir });
@@ -195,7 +196,7 @@ test('init auto-pulls remote_rules declared in template', async () => {
     await stat(join(dir, '.autoreview/remote_rules/shared/v1/rules/a.md'));
   } finally {
     await cleanup();
-    await rm(pluginDir, { recursive: true, force: true });
+    await cleanupPlugin();
     await rm(remoteDir, { recursive: true, force: true });
   }
 });
@@ -203,7 +204,7 @@ test('init auto-pulls remote_rules declared in template', async () => {
 
 test('init emits pull command when ollama model missing', async () => {
   const { dir, cleanup } = await mkRepo();
-  const pluginDir = await mkPluginRoot();
+  const { dir: pluginDir, cleanup: cleanupPlugin } = await mkPluginRoot();
   const { port, close } = await spinHttpServer({
     '/api/tags': (q, r) => { r.writeHead(200); r.end(JSON.stringify({ models: [] })); },
   });
@@ -218,14 +219,14 @@ test('init emits pull command when ollama model missing', async () => {
     assert.match(c.out(), /ollama pull qwen2.5-coder:7b/);
   } finally {
     await cleanup();
-    await rm(pluginDir, { recursive: true, force: true });
+    await cleanupPlugin();
     await close();
   }
 });
 
 test('init emits no pull hint when ollama model is already present', async () => {
   const { dir, cleanup } = await mkRepo();
-  const pluginDir = await mkPluginRoot();
+  const { dir: pluginDir, cleanup: cleanupPlugin } = await mkPluginRoot();
   const { port, close } = await spinHttpServer({
     '/api/tags': (q, r) => { r.writeHead(200); r.end(JSON.stringify({ models: [{ name: 'qwen2.5-coder:7b' }] })); },
   });
@@ -240,7 +241,7 @@ test('init emits no pull hint when ollama model is already present', async () =>
     assert.doesNotMatch(c.out(), /\[next-step\].*ollama pull/);
   } finally {
     await cleanup();
-    await rm(pluginDir, { recursive: true, force: true });
+    await cleanupPlugin();
     await close();
   }
 });

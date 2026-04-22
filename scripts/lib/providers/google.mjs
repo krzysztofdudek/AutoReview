@@ -10,7 +10,9 @@ export function create({ model, apiKey, baseUrl = 'https://generativelanguage.go
     async isAvailable() { return !!apiKey; },
     async verify(prompt, { maxTokens, reasoningEffort } = {}) {
       if (!apiKey) return { satisfied: false, providerError: true, raw: 'no api key' };
-      const generationConfig = { maxOutputTokens: maxTokens, temperature: 0 };
+      const generationConfig = { temperature: 0 };
+      // 0 = no explicit cap.
+      if (maxTokens > 0) generationConfig.maxOutputTokens = maxTokens;
       if (reasoningEffort && THINK_BUDGETS[reasoningEffort]) {
         generationConfig.thinkingConfig = { thinkingBudget: THINK_BUDGETS[reasoningEffort] };
       }

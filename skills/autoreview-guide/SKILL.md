@@ -1,6 +1,6 @@
 ---
 name: autoreview-guide
-description: Use when the user asks a free-text question about a convention and you don't have a file path yet ("how do I write a command handler here?"). Returns `read:` pointers to relevant rules. Knowledge retrieval, not review. Zero LLM call.
+description: Use when the user asks a free-text question about a convention without a concrete file path ("how do I write a command handler here?", "what's the logging policy?"). The agent needs knowledge retrieval, not a review verdict. Skip when a file path is already known (use autoreview-context); skip when the user actually wants a pass/fail verdict on existing code (use autoreview-review).
 ---
 
 # AutoReview Guide
