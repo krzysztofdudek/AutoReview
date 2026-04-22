@@ -33,7 +33,7 @@ export function parseResponse(raw) {
   const hasNot = /\bnot\s+satisfied\b/.test(lower);
   const hasSatisfied = /\bsatisfied\b/.test(lower);
   if (hasNot) return { satisfied: false, reason: trimmed.slice(0, 200) };
-  if (hasSatisfied) return { satisfied: true, reason: trimmed.slice(0, 200) };
+  if (hasSatisfied) return { satisfied: true };
 
   return { satisfied: false, providerError: true, raw };
 }
@@ -63,5 +63,7 @@ function balancedObject(s, start) {
 
 function normalize(obj, raw) {
   if (typeof obj !== 'object' || obj === null) return { satisfied: false, providerError: true, raw };
-  return { satisfied: !!obj.satisfied, reason: obj.reason, suppressed: obj.suppressed };
+  const satisfied = !!obj.satisfied;
+  // Reason is redundant when satisfied=true. Drop it regardless of what the model emitted.
+  return { satisfied, reason: satisfied ? undefined : obj.reason, suppressed: obj.suppressed };
 }

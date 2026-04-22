@@ -2,10 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseResponse } from '../../scripts/lib/response-parser.mjs';
 
-test('tier 1: direct JSON', () => {
+test('tier 1: direct JSON, reason dropped on pass', () => {
   const r = parseResponse('{"satisfied":true,"reason":"ok"}');
   assert.equal(r.satisfied, true);
-  assert.equal(r.reason, 'ok');
+  assert.equal(r.reason, undefined);
+});
+
+test('tier 1: direct JSON, reason kept on fail', () => {
+  const r = parseResponse('{"satisfied":false,"reason":"missing validation"}');
+  assert.equal(r.satisfied, false);
+  assert.equal(r.reason, 'missing validation');
 });
 
 test('tier 2: markdown fence', () => {
@@ -19,10 +25,10 @@ test('tier 2: bare fence (no json tag)', () => {
   assert.equal(r.satisfied, true);
 });
 
-test('tier 3: balanced brace in noisy text', () => {
+test('tier 3: balanced brace in noisy text, pass drops reason', () => {
   const r = parseResponse('model output: {"satisfied": true, "reason": "nested {braces} fine"} end');
   assert.equal(r.satisfied, true);
-  assert.match(r.reason, /nested/);
+  assert.equal(r.reason, undefined);
 });
 
 test('tier 3: strings with escaped quotes do not throw', () => {

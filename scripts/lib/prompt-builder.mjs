@@ -1,5 +1,5 @@
 // scripts/lib/prompt-builder.mjs
-export const PROMPT_BOILERPLATE_BYTES = 700;
+export const PROMPT_BOILERPLATE_BYTES = 1250;
 
 const TASK_BODY = `You verify whether a source file satisfies a rule.
 Check every statement in the rule against the code.
@@ -10,13 +10,16 @@ Evaluate: {evaluate}
 
 Mode: {mode}
   - quick: output exactly {"satisfied": true|false}
-  - thinking: output exactly {"satisfied": true|false, "reason": "explanation with file:line refs", "suppressed": [{"line": N, "reason": "..."}]}
+  - thinking:
+      if satisfied=true  → output EXACTLY {"satisfied": true}. Do NOT add "reason". Do NOT add any other field unless a suppression marker below applies. One token of explanation is a bug.
+      if satisfied=false → output {"satisfied": false, "reason": "explanation with file:line refs"}
+      if any honored @autoreview-ignore marker applies (regardless of satisfied), add "suppressed": [{"line": N, "reason": "..."}]
 
 Honor \`@autoreview-ignore <rule-id> <reason>\` comments in the code — treat suppressed
 code as satisfied. The comment applies contextually (function / class / block / file-top).
 When code contains an honored \`@autoreview-ignore <rule-id> <reason>\` marker, include an
 entry in \`suppressed\` listing each honored span's starting line and the author-provided reason.
-Still set \`satisfied: true\` for the suppressed portion.
+Still set \`satisfied: true\` for the suppressed portion. Absolutely no "reason" field when satisfied=true — there is nothing to say about a pass.
 
 Respond with EXACTLY this JSON, nothing else.`;
 

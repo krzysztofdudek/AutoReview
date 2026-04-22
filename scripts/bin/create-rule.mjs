@@ -10,7 +10,11 @@ import { getProvider } from '../lib/provider-client.mjs';
 import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchForContent } from '../lib/trigger-engine.mjs';
 import { renderRule, saveRule } from '../lib/rule-authoring.mjs';
 import { walk, isBinary, sizeOf } from '../lib/fs-utils.mjs';
-import { relative } from 'node:path';
+import { relative, resolve as resolvePath, isAbsolute } from 'node:path';
+
+function resolveCliPath(cwd, p) {
+  return isAbsolute(p) ? p : resolvePath(cwd, p);
+}
 
 export async function run(argv, ctx) {
   try {
@@ -65,7 +69,8 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     const provider = getProvider(cfg, {});
     const results = [];
     for (const f of values.files.slice(0, 10)) {
-      const content = await readFile(f, 'utf8').catch(() => null);
+      const abs = resolveCliPath(cwd, f);
+      const content = await readFile(abs, 'utf8').catch(() => null);
       if (content === null) { results.push({ path: f, match: false, error: 'unreadable' }); continue; }
       const prompt = `Does the file at ${f} implement this intent: ${values.intent}? Answer exactly 'yes' or 'no'.`;
       const r = await provider.verify(prompt, { maxTokens: 8 });
@@ -81,7 +86,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     if (!values['rule-body'] || !values.triggers || !values.files) {
       stderr.write('[error] test-drive requires --rule-body --triggers --files\n'); return 1;
     }
-    const body = await readFile(values['rule-body'], 'utf8');
+    const body = await readFile(resolveCliPath(cwd, values['rule-body']), 'utf8');
     const { reviewFile } = await import('../lib/reviewer.mjs');
     const ephemeral = {
       id: 'ephemeral',
@@ -91,7 +96,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     };
     const results = [];
     for (const f of values.files) {
-      const raw = await readFile(f).catch(() => null);
+      const raw = await readFile(resolveCliPath(cwd, f)).catch(() => null);
       if (!raw) { results.push({ path: f, error: 'unreadable' }); continue; }
       const binary = isBinary(raw);
       const content = raw.toString('utf8');
@@ -99,6 +104,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
         repoRoot: root, config: cfg, rules: [ephemeral],
         file: { path: f, content, binary },
         diff: null, intentGate: null, historyEnabled: false,
+        stderr,
       });
       results.push({ path: f, verdicts: res.verdicts });
     }
@@ -110,7 +116,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     if (!values.name || !values.triggers || !values['body-file'] || !values.to) {
       stderr.write('[error] save requires --name --triggers --body-file --to\n'); return 1;
     }
-    const body = await readFile(values['body-file'], 'utf8');
+    const body = await readFile(resolveCliPath(cwd, values['body-file']), 'utf8');
     const content = renderRule({
       name: values.name,
       triggers: values.triggers,

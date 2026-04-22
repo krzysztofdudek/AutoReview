@@ -39,6 +39,6 @@ test('openai-compat forwards request to <endpoint>/chat/completions with reasoni
     assert.equal(p.name, 'openai-compat');
     const v = await p.verify('check this', { maxTokens: 200, reasoningEffort: 'low' });
     assert.equal(v.satisfied, true);
-    assert.equal(v.reason, 'looks good');
+    assert.equal(v.reason, undefined);
   } finally { await close(); }
 });

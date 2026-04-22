@@ -107,3 +107,88 @@ test('compiled path matcher cached on AST node', () => {
   evaluate(ast, { path: 'src/a.ts', content: '', binary: false });
   assert.ok(typeof ast._pathRx === 'function');
 });
+
+test('parse OR at top level', () => {
+  const ast = parse('path:"a" OR path:"b"');
+  assert.equal(ast.type, 'or');
+  assert.equal(ast.children.length, 2);
+});
+
+test('parse NOT flips truth', () => {
+  const ast = parse('NOT path:"a"');
+  assert.equal(ast.type, 'not');
+  assert.equal(evaluate(ast, { path: 'a', content: '', binary: false }), false);
+  assert.equal(evaluate(ast, { path: 'b', content: '', binary: false }), true);
+});
+
+test('tokenizer rejects unknown identifier', () => {
+  assert.throws(() => parse('foo:"x"'), /unknown identifier/);
+});
+
+test('tokenizer rejects unexpected character', () => {
+  assert.throws(() => parse('path:"a" & path:"b"'), /unexpected/);
+});
+
+test('tokenizer rejects bad escape sequence in string', () => {
+  assert.throws(() => parse('content:"bad \\q escape"'), /bad escape/);
+});
+
+test('tokenizer accepts \\n escape', () => {
+  const ast = parse('content:"line1\\nline2"');
+  assert.equal(ast.value, 'line1\nline2');
+});
+
+test('tokenizer accepts \\\\ escape', () => {
+  const ast = parse('content:"path\\\\to"');
+  assert.equal(ast.value, 'path\\to');
+});
+
+test('parser rejects missing predicate value', () => {
+  assert.throws(() => parse('path:'), /expected|STRING/i);
+});
+
+test('parser rejects dangling AND', () => {
+  assert.throws(() => parse('path:"a" AND'), /expected|KIND/i);
+});
+
+test('parser rejects unbalanced parens', () => {
+  assert.throws(() => parse('(path:"a"'), /expected/i);
+});
+
+test('dir: with trailing slash matches', () => {
+  const ast = parse('dir:"src/api/"');
+  assert.equal(evaluate(ast, { path: 'src/api/x.ts', content: '', binary: false }), true);
+});
+
+test('matchPath single-char wildcard ?', () => {
+  assert.equal(matchPath('a?.ts', 'ab.ts'), true);
+  assert.equal(matchPath('a?.ts', 'abc.ts'), false);
+});
+
+test('matchPath brace expansion with 3 alternatives', () => {
+  assert.equal(matchPath('src/{a,b,c}/x.ts', 'src/b/x.ts'), true);
+  assert.equal(matchPath('src/{a,b,c}/x.ts', 'src/d/x.ts'), false);
+});
+
+test('matchPath character class [ab]', () => {
+  assert.equal(matchPath('[ab].ts', 'a.ts'), true);
+  assert.equal(matchPath('[ab].ts', 'b.ts'), true);
+  assert.equal(matchPath('[ab].ts', 'c.ts'), false);
+});
+
+test('matchPath special chars escaped (dot, plus, etc)', () => {
+  assert.equal(matchPath('a.b', 'a.b'), true);
+  // '.' in glob matches only literal dot (not "any char")
+  assert.equal(matchPath('a.b', 'aXb'), false);
+});
+
+test('shouldTreatAsNonMatchForContent: exactly at threshold', () => {
+  // 1MB size boundary handled
+  assert.equal(shouldTreatAsNonMatchForContent(1_000_000, false), false);
+});
+
+test('evaluate NOT with dir predicate', () => {
+  const ast = parse('NOT dir:"tests"');
+  assert.equal(evaluate(ast, { path: 'src/a.ts', content: '', binary: false }), true);
+  assert.equal(evaluate(ast, { path: 'tests/a.ts', content: '', binary: false }), false);
+});

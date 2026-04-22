@@ -2,7 +2,21 @@
 // Rule authoring helpers — rendering YAML frontmatter + writing file.
 
 import { writeFile, mkdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve, isAbsolute } from 'node:path';
+
+function validateRelativePath(relativePath) {
+  if (typeof relativePath !== 'string' || relativePath.length === 0) {
+    throw new Error('relativePath must be a non-empty string');
+  }
+  if (isAbsolute(relativePath)) {
+    throw new Error(`relativePath must not be absolute: ${relativePath}`);
+  }
+  // Reject traversal segments outright; filters `..`, `./..`, `foo/../bar` etc.
+  const segments = relativePath.split(/[/\\]/).filter(Boolean);
+  if (segments.some(s => s === '..')) {
+    throw new Error(`relativePath must not contain '..' segments: ${relativePath}`);
+  }
+}
 
 function escapeDouble(str) { return str.replace(/"/g, '\\"'); }
 
@@ -19,7 +33,13 @@ export function renderRule({ name, triggers, intent, description, provider, mode
 }
 
 export async function saveRule({ repoRoot, relativePath, content }) {
-  const abs = join(repoRoot, '.autoreview/rules', relativePath);
+  validateRelativePath(relativePath);
+  const rulesDir = resolve(repoRoot, '.autoreview/rules');
+  const abs = resolve(rulesDir, relativePath);
+  // Belt-and-braces: even with validation above, verify the resolved path stays inside the rules dir.
+  if (abs !== rulesDir && !abs.startsWith(rulesDir + '/')) {
+    throw new Error(`relativePath escapes .autoreview/rules: ${relativePath}`);
+  }
   await mkdir(dirname(abs), { recursive: true });
   await writeFile(abs, content);
   return abs;

@@ -20,3 +20,6 @@ examples/*/.autoreview/.history/
 
 # Own
 .temp
+
+# E2E scratch (per-test throwaway git repos)
+tests/.e2e-scratch/

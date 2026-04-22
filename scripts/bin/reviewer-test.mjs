@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // scripts/bin/reviewer-test.mjs
 import { readFile } from 'node:fs/promises';
+import { isAbsolute, resolve as resolvePath } from 'node:path';
 import { parseArgs } from '../lib/args.mjs';
 import { repoRoot } from '../lib/git-utils.mjs';
 import { loadConfig, DEFAULT_CONFIG } from '../lib/config-loader.mjs';
@@ -32,9 +33,11 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   if (!rule) { stderr.write(`[error] rule not found: ${values.rule}\n`); return 1; }
 
   // --content-file lets agents submit hypothetical content while keeping --file as the logical path.
-  const contentPath = values['content-file'] ?? values.file;
+  // Relative paths resolve against the CLI ctx.cwd (not process.cwd()).
+  const rawContentPath = values['content-file'] ?? values.file;
+  const contentPath = isAbsolute(rawContentPath) ? rawContentPath : resolvePath(cwd, rawContentPath);
   const content = await readFile(contentPath, 'utf8').catch(() => null);
-  if (content === null) { stderr.write(`[error] cannot read ${contentPath}\n`); return 1; }
+  if (content === null) { stderr.write(`[error] cannot read ${rawContentPath}\n`); return 1; }
 
   const provider = getProvider(cfg, {
     ruleProvider: values.provider ?? rule.frontmatter.provider,

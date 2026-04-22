@@ -12,19 +12,30 @@ import { reportVerdicts } from '../lib/report.mjs';
 import { createHistorySession } from '../lib/history.mjs';
 import { readFileOrNull, isBinary } from '../lib/fs-utils.mjs';
 import { readFile } from 'node:fs/promises';
+import { isAbsolute, resolve as resolvePath } from 'node:path';
 import { pullSource } from '../lib/remote-rules-pull.mjs';
 
 function stubProviderByEnv(env) {
   const mode = env.AUTOREVIEW_STUB_PROVIDER;
   if (!mode) return null;
+  const customReason = env.AUTOREVIEW_STUB_REASON;
   const map = {
     pass: { satisfied: true },
-    fail: { satisfied: false, reason: 'stub fail' },
+    fail: { satisfied: false, reason: customReason ?? 'stub fail' },
     error: { satisfied: false, providerError: true, raw: 'stub' },
   };
+  const callLogPath = env.AUTOREVIEW_STUB_CALL_LOG;
   return {
     name: 'stub', model: 'stub',
-    async verify() { return map[mode]; },
+    async verify(prompt) {
+      if (callLogPath) {
+        // Write one line per call; each line is a JSON record the test can count/inspect.
+        const { appendFile } = await import('node:fs/promises');
+        const line = JSON.stringify({ ts: Date.now(), promptLen: prompt.length, diffPresent: /<diff>\n(?!\(no diff)/.test(prompt) }) + '\n';
+        await appendFile(callLogPath, line);
+      }
+      return map[mode];
+    },
     contextWindowBytes: async () => 16384,
   };
 }
@@ -72,38 +83,9 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
 
   const enforcement = cfg.enforcement?.[context] ?? (context === 'precommit' ? 'soft' : 'hard');
 
-  const { rules, warnings: ruleWarnings } = await loadRules(root, cfg);
-  for (const w of ruleWarnings) stderr.write(`[warn] ${w}\n`);
-  const filtered = values.rule ? rules.filter(r => values.rule.includes(r.id)) : rules;
-
-  // §15: hypothetical pre-check — content from disk scratch file, logical path supplied.
-  let entries;
-  if (values['content-file'] && values['target-path']) {
-    const buf = await readFile(values['content-file']).catch(() => null);
-    if (!buf) { stderr.write(`[error] cannot read ${values['content-file']}\n`); return 1; }
-    const content = buf.toString('utf8');
-    entries = [{
-      path: values['target-path'],
-      content,
-      diff: null,
-      binary: isBinary(buf),
-      size: buf.length,
-    }];
-  } else {
-    const scopeArgs = {
-      repoRoot: root,
-      scope: values.scope ?? ctxOverrides.scope,
-      sha: values.sha,
-      files: values.files,
-      dir: values.dir,
-      walkCap: cfg.review.walk_file_cap ?? 10000,
-    };
-    const scopeResult = await resolveScope(scopeArgs);
-    for (const w of scopeResult.warnings) stderr.write(`[warn] ${w}\n`);
-    entries = scopeResult.entries;
-  }
-
-  // §24: warn if any declared remote source is not on disk. Auto-pull if configured.
+  // §24: if remote_rules are declared and their cache is missing, auto-pull BEFORE loading rules
+  // so the remote rules are actually available to this review run. Without this reorder,
+  // loadRules reads a non-existent directory, then the pull happens after — but too late.
   for (const source of cfg.remote_rules ?? []) {
     const sentinelPath = `${root}/.autoreview/remote_rules/${source.name}/${source.ref}/.autoreview-managed`;
     const sentinel = await readFileOrNull(sentinelPath);
@@ -119,6 +101,42 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
         stderr.write(`[warn] remote source '${source.name}@${source.ref}' has no cache — run /autoreview:pull-remote or set review.remote_rules_auto_pull: true\n`);
       }
     }
+  }
+
+  const { rules, warnings: ruleWarnings } = await loadRules(root, cfg);
+  for (const w of ruleWarnings) stderr.write(`[warn] ${w}\n`);
+  const filtered = values.rule ? rules.filter(r => values.rule.includes(r.id)) : rules;
+
+  // §15: hypothetical pre-check — content from disk scratch file, logical path supplied.
+  let entries;
+  if (values['content-file'] && values['target-path']) {
+    // Relative paths resolve against ctx.cwd (not process.cwd()).
+    const contentFile = isAbsolute(values['content-file'])
+      ? values['content-file']
+      : resolvePath(cwd, values['content-file']);
+    const buf = await readFile(contentFile).catch(() => null);
+    if (!buf) { stderr.write(`[error] cannot read ${values['content-file']}\n`); return 1; }
+    const content = buf.toString('utf8');
+    entries = [{
+      path: values['target-path'],
+      content,
+      diff: null,
+      binary: isBinary(buf),
+      size: buf.length,
+    }];
+  } else {
+    const explicitSelector = values.scope || values.sha || values.files || values.dir;
+    const scopeArgs = {
+      repoRoot: root,
+      scope: values.scope ?? (explicitSelector ? null : ctxOverrides.scope),
+      sha: values.sha,
+      files: values.files,
+      dir: values.dir,
+      walkCap: cfg.review.walk_file_cap ?? 10000,
+    };
+    const scopeResult = await resolveScope(scopeArgs);
+    for (const w of scopeResult.warnings) stderr.write(`[warn] ${w}\n`);
+    entries = scopeResult.entries;
   }
 
   const stubProvider = stubProviderByEnv(env);
@@ -150,6 +168,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
       historyAppend: historySession ? rec => historySession.append(rec) : null,
       _providerOverride: stubProvider,
       _state: reviewState,
+      stderr,
     });
     reportVerdicts(entry, verdicts, cfg.review.mode, stderr);
     for (const v of verdicts) {

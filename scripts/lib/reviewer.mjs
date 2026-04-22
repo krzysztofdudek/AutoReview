@@ -33,6 +33,10 @@ export async function reviewFile(opts) {
     _providerOverride = null,
   } = opts;
   const _state = opts._state ?? { ctxCache: new Map(), warnedReasoning: new Set() };
+  // Optional structured stderr; defaults to console.error for CLIs that don't plumb ctx through.
+  const warn = opts.stderr
+    ? (msg) => opts.stderr.write(msg + '\n')
+    : (msg) => console.error(msg);
 
   const verdicts = [];
   const matched = [];
@@ -63,7 +67,7 @@ export async function reviewFile(opts) {
     const markers = scanSuppressMarkers(file.content);
     const ruleMarkers = markers.filter(m => m.ruleId === rule.id);
     for (const bad of ruleMarkers.filter(m => !m.valid)) {
-      console.error(`[warn] @autoreview-ignore at ${file.path}:${bad.line} missing mandatory <reason>`);
+      warn(`[warn] @autoreview-ignore at ${file.path}:${bad.line} missing mandatory <reason>`);
     }
 
     const provider = _providerOverride ?? getProvider(config, {
@@ -73,7 +77,7 @@ export async function reviewFile(opts) {
 
     if (config.review.reasoning_effort && !REASONING_SUPPORT.has(provider.name) && !_state.warnedReasoning.has(provider.name)) {
       _state.warnedReasoning.add(provider.name);
-      console.error(`[warn] provider ${provider.name} does not support reasoning_effort; ignoring for this run`);
+      warn(`[warn] provider ${provider.name} does not support reasoning_effort; ignoring for this run`);
     }
 
     const contextWindowBytes = await resolveContextWindow(config, provider, _state);

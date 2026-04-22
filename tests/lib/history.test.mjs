@@ -59,6 +59,58 @@ test('appendFileSummary writes type:file-summary', async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('fitRecord: truncates reason when even after sidecar the line is too big', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-hist-'));
+  try {
+    // Reason >2000 triggers sidecar; truncated to 500 chars + marker → still <3500, so ok.
+    // To hit the final `reason = '[... reason truncated]'` branch, combine with a huge file path.
+    const longFile = 'a/'.repeat(2000) + 'end.ts';
+    const longReason = 'r'.repeat(10000);
+    await appendVerdict(dir, { file: longFile, rule: 'r1', mode: 'thinking', provider: 'p', model: 'm', verdict: 'fail', reason: longReason });
+    const day = new Date().toISOString().slice(0, 10);
+    const body = await readFile(join(dir, '.autoreview/.history', `${day}.jsonl`), 'utf8');
+    const line = body.trim();
+    assert.ok(Buffer.byteLength(line) <= MAX_RECORD_BYTES);
+    const rec = JSON.parse(line);
+    assert.ok(rec.reason_sidecar, 'sidecar must still be written even when reason gets truncated');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('createHistorySession split across two days', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-hist-'));
+  try {
+    const s = createHistorySession(dir);
+    await s.append({ type: 'verdict', file: 'a.ts', rule: 'r1', verdict: 'pass', ts: '2026-04-20T23:00:00Z' });
+    await s.append({ type: 'verdict', file: 'b.ts', rule: 'r1', verdict: 'pass', ts: '2026-04-21T00:01:00Z' });
+    await s.close();
+    const body20 = await readFile(join(dir, '.autoreview/.history/2026-04-20.jsonl'), 'utf8');
+    const body21 = await readFile(join(dir, '.autoreview/.history/2026-04-21.jsonl'), 'utf8');
+    assert.equal(JSON.parse(body20.trim()).file, 'a.ts');
+    assert.equal(JSON.parse(body21.trim()).file, 'b.ts');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('createHistorySession throws on append after close', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-hist-'));
+  try {
+    const s = createHistorySession(dir);
+    await s.append({ type: 'verdict', file: 'a.ts', rule: 'r1', verdict: 'pass' });
+    await s.close();
+    await assert.rejects(s.append({ type: 'verdict', file: 'b.ts', rule: 'r1', verdict: 'pass' }), /closed/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('appendVerdict auto-populates ts when missing', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-hist-'));
+  try {
+    await appendVerdict(dir, { file: 'a.ts', rule: 'r', verdict: 'pass' });
+    const day = new Date().toISOString().slice(0, 10);
+    const body = await readFile(join(dir, '.autoreview/.history', `${day}.jsonl`), 'utf8');
+    const rec = JSON.parse(body.trim());
+    assert.match(rec.ts, /^\d{4}-\d{2}-\d{2}T/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('createHistorySession keeps one stream open per day', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ar-hist-sess-'));
   try {

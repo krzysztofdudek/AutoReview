@@ -191,8 +191,8 @@ test('init auto-pulls remote_rules declared in template', async () => {
       ...c,
     });
     assert.equal(code, 0);
-    // Remote rule cache should exist after init
-    await stat(join(dir, '.autoreview/remote_rules/shared/v1/a.md'));
+    // Remote rule cache should exist after init. pullSource preserves `path` layout.
+    await stat(join(dir, '.autoreview/remote_rules/shared/v1/rules/a.md'));
   } finally {
     await cleanup();
     await rm(pluginDir, { recursive: true, force: true });

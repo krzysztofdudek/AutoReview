@@ -43,7 +43,7 @@ test('verify posts to /api/generate and parses response', async () => {
     const p = create({ endpoint: `http://127.0.0.1:${port}`, model: 'qwen2.5-coder:7b' });
     const v = await p.verify('does it pass?', { maxTokens: 100 });
     assert.equal(v.satisfied, true);
-    assert.equal(v.reason, 'ok');
+    assert.equal(v.reason, undefined);
   } finally { await close(); }
 });
 
@@ -69,5 +69,100 @@ test('contextWindowBytes reads model_info.general.context_length', async () => {
   try {
     const p = create({ endpoint: `http://127.0.0.1:${port}`, model: 'x' });
     assert.equal(await p.contextWindowBytes(), 32768 * 4);
+  } finally { await close(); }
+});
+
+test('contextWindowBytes falls back to 32768 when model_info missing', async () => {
+  const { port, close } = await spin({
+    '/api/show': (q, r) => { r.writeHead(200); r.end('{}'); },
+  });
+  try {
+    const p = create({ endpoint: `http://127.0.0.1:${port}`, model: 'x' });
+    assert.equal(await p.contextWindowBytes(), 32768);
+  } finally { await close(); }
+});
+
+test('contextWindowBytes falls back when /api/show returns 500', async () => {
+  const { port, close } = await spin({
+    '/api/show': (q, r) => { r.writeHead(500); r.end('err'); },
+  });
+  try {
+    const p = create({ endpoint: `http://127.0.0.1:${port}`, model: 'x' });
+    assert.equal(await p.contextWindowBytes(), 32768);
+  } finally { await close(); }
+});
+
+test('contextWindowBytes falls back on network error', async () => {
+  const p = create({ endpoint: 'http://127.0.0.1:1', model: 'x' });
+  assert.equal(await p.contextWindowBytes(), 32768);
+});
+
+test('isAvailable false when endpoint unreachable', async () => {
+  const p = create({ endpoint: 'http://127.0.0.1:1', model: 'x' });
+  assert.equal(await p.isAvailable(), false);
+});
+
+test('isAvailable false on non-200 status', async () => {
+  const { port, close } = await spin({
+    '/api/tags': (q, r) => { r.writeHead(500); r.end(); },
+  });
+  try {
+    const p = create({ endpoint: `http://127.0.0.1:${port}`, model: 'x' });
+    assert.equal(await p.isAvailable(), false);
+  } finally { await close(); }
+});
+
+test('verify catches network error, returns providerError with stringified err', async () => {
+  const p = create({
+    endpoint: 'http://127.0.0.1:1', model: 'x',
+    _retryOptions: { attempts: 1, initialMs: 5, factor: 1, jitterMs: 0, shouldRetry: () => false },
+  });
+  const v = await p.verify('p', { maxTokens: 10 });
+  assert.equal(v.providerError, true);
+  assert.match(String(v.raw), /ECONNREFUSED|EADDRNOTAVAIL|Error/);
+});
+
+test('ollamaHasModel: true when model name matches', async () => {
+  const { ollamaHasModel } = await import('../../../scripts/lib/providers/ollama.mjs');
+  const { port, close } = await spin({
+    '/api/tags': (q, r) => { r.writeHead(200); r.end(JSON.stringify({ models: [{ name: 'gemma4:e4b' }, { name: 'other' }] })); },
+  });
+  try {
+    assert.equal(await ollamaHasModel(`http://127.0.0.1:${port}`, 'gemma4:e4b'), true);
+  } finally { await close(); }
+});
+
+test('ollamaHasModel: true when installed variant has tag-suffixed name', async () => {
+  const { ollamaHasModel } = await import('../../../scripts/lib/providers/ollama.mjs');
+  const { port, close } = await spin({
+    '/api/tags': (q, r) => { r.writeHead(200); r.end(JSON.stringify({ models: [{ name: 'llama3:8b' }] })); },
+  });
+  try {
+    assert.equal(await ollamaHasModel(`http://127.0.0.1:${port}`, 'llama3'), true);
+  } finally { await close(); }
+});
+
+test('ollamaHasModel: false when not present', async () => {
+  const { ollamaHasModel } = await import('../../../scripts/lib/providers/ollama.mjs');
+  const { port, close } = await spin({
+    '/api/tags': (q, r) => { r.writeHead(200); r.end(JSON.stringify({ models: [{ name: 'other' }] })); },
+  });
+  try {
+    assert.equal(await ollamaHasModel(`http://127.0.0.1:${port}`, 'gemma4'), false);
+  } finally { await close(); }
+});
+
+test('ollamaHasModel: false when endpoint unreachable', async () => {
+  const { ollamaHasModel } = await import('../../../scripts/lib/providers/ollama.mjs');
+  assert.equal(await ollamaHasModel('http://127.0.0.1:1', 'x'), false);
+});
+
+test('ollamaHasModel: false on non-200', async () => {
+  const { ollamaHasModel } = await import('../../../scripts/lib/providers/ollama.mjs');
+  const { port, close } = await spin({
+    '/api/tags': (q, r) => { r.writeHead(500); r.end(); },
+  });
+  try {
+    assert.equal(await ollamaHasModel(`http://127.0.0.1:${port}`, 'x'), false);
   } finally { await close(); }
 });

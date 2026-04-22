@@ -3,7 +3,7 @@
 // Binary detection centralized here per design §3.
 
 import { readFile } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { join, relative, isAbsolute } from 'node:path';
 
 async function runLimited(items, limit, fn) {
   const results = new Array(items.length);
@@ -41,12 +41,19 @@ async function readCommitContentWithBinaryDetect(repoRoot, sha, path) {
 
 async function readEntries(repoRoot, paths, diffFn) {
   return runLimited(paths, 16, async (p) => {
-    const { content, binary, size } = await readWithBinaryDetect(join(repoRoot, p));
-    const diffResult = diffFn(p);
+    // Accept absolute paths straight; repo-relative get joined. Keep `path` field
+    // normalized to repo-relative so rule `path:` globs evaluate the same way
+    // regardless of how the caller spelled the file.
+    const abs = isAbsolute(p) ? p : join(repoRoot, p);
+    const { content, binary, size } = await readWithBinaryDetect(abs);
+    const rel = isAbsolute(p) && p.startsWith(repoRoot + '/')
+      ? p.slice(repoRoot.length + 1)
+      : p;
+    const diffResult = diffFn(rel);
     const diff = diffResult && typeof diffResult.catch === 'function'
       ? await diffResult.catch(() => null)
       : await diffResult;
-    return { path: p, content, diff, binary, size };
+    return { path: rel, content, diff, binary, size };
   });
 }
 

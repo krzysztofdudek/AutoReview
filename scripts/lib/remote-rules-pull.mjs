@@ -90,8 +90,14 @@ export async function pullSource({ repoRoot, source, env = process.env }) {
       process.cwd(),
       env,
     );
-    const src = join(tmp, source.path ?? '.');
-    await cp(src, target, { recursive: true });
+    // Preserve layout: if `path` names a subdirectory of the upstream repo, copy it
+    // into the same relative location under `target`. This way rule-loader's base
+    // (`<target>/<path>/`) and the pulled tree agree. Without this, we'd strip the
+    // prefix and rule-loader would look in an empty dir.
+    const hasSubPath = source.path && source.path !== '.';
+    const src = hasSubPath ? join(tmp, source.path) : tmp;
+    const dst = hasSubPath ? join(target, source.path) : target;
+    await cp(src, dst, { recursive: true });
     await writeFile(
       join(target, SENTINEL),
       `source: ${source.url}\nref: ${source.ref}\npulled: ${new Date().toISOString()}\n`,

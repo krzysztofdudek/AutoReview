@@ -46,6 +46,8 @@ export async function worktreeModifiedPaths(cwd) {
     const e = entries[i];
     const index = e[0], work = e[1];
     const path = e.slice(3);
+    // Untracked files (`??`) count as "uncommitted": review them before a commit lands.
+    if (index === '?' && work === '?') { set.add(path); continue; }
     if (index !== ' ' && 'AMRCDU'.includes(index)) set.add(path);
     if (work !== ' ' && 'MDRC'.includes(work)) set.add(path);
     if (index === 'R' || index === 'C') i++;

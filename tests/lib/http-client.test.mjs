@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { request, withRetry } from '../../scripts/lib/http-client.mjs';
+import { request, withRetry, retryable } from '../../scripts/lib/http-client.mjs';
 
 function spin(handler) {
   return new Promise(resolve => {
@@ -63,4 +63,67 @@ test('withRetry retries on thrown error, succeeds on third try', async () => {
 test('withRetry gives up after attempts', async () => {
   const fn = async () => { const e = new Error('always'); e.code = 'ECONNREFUSED'; throw e; };
   await assert.rejects(() => withRetry(fn, { attempts: 2, initialMs: 5, factor: 1, jitterMs: 0 }), /always/);
+});
+
+test('withRetry does NOT retry non-retryable errors', async () => {
+  let n = 0;
+  const fn = async () => { n++; const e = new Error('validation'); throw e; };
+  await assert.rejects(() => withRetry(fn, { attempts: 3, initialMs: 5, factor: 1, jitterMs: 0, shouldRetry: () => false }), /validation/);
+  assert.equal(n, 1);
+});
+
+test('retryable: ETIMEDOUT / ECONNREFUSED / ENOTFOUND / ECONNRESET', () => {
+  for (const code of ['ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ECONNRESET']) {
+    const e = new Error(code); e.code = code;
+    assert.ok(retryable(e), `${code} should be retryable`);
+  }
+});
+
+test('retryable: /timeout/ message substring', () => {
+  assert.ok(retryable(new Error('request timeout after 100ms')));
+});
+
+test('retryable: status 5xx parsed from message', () => {
+  assert.ok(retryable(new Error('openai status:502 service unavailable')));
+});
+
+test('retryable: err.status numeric 5xx', () => {
+  assert.ok(retryable({ status: 503 }));
+});
+
+test('retryable: rejects 4xx', () => {
+  assert.equal(retryable({ status: 404 }), false);
+});
+
+test('retryable: rejects plain Error with no code/message signal', () => {
+  assert.equal(retryable(new Error('validation failed')), false);
+});
+
+test('retryable: falsy / null safe', () => {
+  assert.equal(retryable(null), false);
+  assert.equal(retryable(undefined), false);
+});
+
+test('request on non-200 status still resolves with status+body', async () => {
+  const { port, close } = await spin((req, res) => {
+    res.writeHead(418, {'content-type':'text/plain'});
+    res.end('teapot');
+  });
+  try {
+    const r = await request({ url: `http://127.0.0.1:${port}/`, method: 'GET' });
+    assert.equal(r.status, 418);
+    assert.equal(r.body, 'teapot');
+  } finally { await close(); }
+});
+
+test('request with no body (GET, body=null) — no content-length header set', async () => {
+  let sawCL;
+  const { port, close } = await spin((req, res) => {
+    sawCL = req.headers['content-length'];
+    res.writeHead(200); res.end();
+  });
+  try {
+    await request({ url: `http://127.0.0.1:${port}/`, method: 'GET' });
+    assert.equal(sawCL, undefined);
+  } finally { await close(); }
 });

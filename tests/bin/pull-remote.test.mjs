@@ -47,7 +47,8 @@ test('pullSource: fresh pull creates target + sentinel', async () => {
     assert.ok(s.isDirectory());
     const sentinel = await readFile(join(target, '.autoreview-managed'), 'utf8');
     assert.match(sentinel, /source:/);
-    const rule = await readFile(join(target, 'a.md'), 'utf8');
+    // pullSource preserves `path` layout: content lives at <target>/<path>/, matching rule-loader base.
+    const rule = await readFile(join(target, 'rules/a.md'), 'utf8');
     assert.match(rule, /name: A/);
   } finally {
     await rm(remote, { recursive: true, force: true });

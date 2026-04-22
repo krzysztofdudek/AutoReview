@@ -20,3 +20,19 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - name: Run tests
         run: npm test
+
+  coverage:
+    # 90% coverage gate on lines, branches AND functions. Fails the job otherwise.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+      - name: Configure git identity for e2e scratch repos
+        run: |
+          git config --global user.email "ci@test"
+          git config --global user.name "ci"
+      - name: Run coverage gate
+        run: npm run coverage
