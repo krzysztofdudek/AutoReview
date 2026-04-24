@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { parseArgs } from '../lib/args.mjs';
 import { repoRoot } from '../lib/git-utils.mjs';
 import { matchPath } from '../lib/trigger-engine.mjs';
+import { isMainModule } from '../lib/fs-utils.mjs';
 
 export async function run(argv, { cwd, env, stdout, stderr }) {
   try {
@@ -110,7 +111,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   run(process.argv.slice(2), { cwd: process.cwd(), env: process.env, stdout: process.stdout, stderr: process.stderr })
     .then(c => process.exit(c ?? 0));
 }

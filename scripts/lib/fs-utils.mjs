@@ -7,7 +7,7 @@
  */
 import { readFile, writeFile, rename, stat, mkdir, readdir } from 'node:fs/promises';
 import { dirname, join, relative, sep, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export async function readFileOrNull(path) {
   try {
@@ -104,4 +104,12 @@ export async function* walk({ root, skipDirs = ['node_modules', '.git', 'dist', 
 export function pluginRoot(importMetaUrl, env = process.env) {
   if (env.CLAUDE_PLUGIN_ROOT) return env.CLAUDE_PLUGIN_ROOT;
   return resolve(fileURLToPath(importMetaUrl), '../../../');
+}
+
+// Windows-safe replacement for `import.meta.url === \`file://${process.argv[1]}\``.
+// That naive comparison fails on Windows (backslashes + double- vs triple-slash
+// file:// URL), causing entrypoints to silently no-op with exit 0.
+export function isMainModule(importMetaUrl, argv1 = process.argv[1]) {
+  if (!argv1) return false;
+  return importMetaUrl === pathToFileURL(argv1).href;
 }

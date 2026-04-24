@@ -5,7 +5,7 @@ import { repoRoot } from '../lib/git-utils.mjs';
 import { loadConfig, DEFAULT_CONFIG } from '../lib/config-loader.mjs';
 import { loadRules } from '../lib/rule-loader.mjs';
 import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchForContent } from '../lib/trigger-engine.mjs';
-import { walk, isBinary, sizeOf } from '../lib/fs-utils.mjs';
+import { walk, isBinary, sizeOf, isMainModule } from '../lib/fs-utils.mjs';
 import { readFile } from 'node:fs/promises';
 import { relative } from 'node:path';
 
@@ -65,7 +65,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   run(process.argv.slice(2), { cwd: process.cwd(), env: process.env, stdout: process.stdout, stderr: process.stderr })
     .then(c => process.exit(c ?? 0));
 }

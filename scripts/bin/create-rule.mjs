@@ -9,7 +9,7 @@ import { loadConfig, DEFAULT_CONFIG } from '../lib/config-loader.mjs';
 import { getProvider } from '../lib/provider-client.mjs';
 import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchForContent } from '../lib/trigger-engine.mjs';
 import { renderRule, saveRule } from '../lib/rule-authoring.mjs';
-import { walk, isBinary, sizeOf } from '../lib/fs-utils.mjs';
+import { walk, isBinary, sizeOf, isMainModule } from '../lib/fs-utils.mjs';
 import { reviewFile } from '../lib/reviewer.mjs';
 import { relative, resolve as resolvePath, isAbsolute } from 'node:path';
 
@@ -135,7 +135,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   return 1;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   run(process.argv.slice(2), { cwd: process.cwd(), env: process.env, stdout: process.stdout, stderr: process.stderr })
     .then(c => process.exit(c ?? 0));
 }

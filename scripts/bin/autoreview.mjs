@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // scripts/bin/autoreview.mjs — unified CLI entry. Routes to subcommands.
 
+import { isMainModule } from '../lib/fs-utils.mjs';
+
 const SUBCOMMANDS = {
   init: () => import('./init.mjs'),
   validate: () => import('./validate.mjs'),
@@ -29,7 +31,7 @@ export async function run(argv, ctx) {
   return mod.run(rest, ctx);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   run(process.argv.slice(2), {
     cwd: process.cwd(), env: process.env,
     stdout: process.stdout, stderr: process.stderr,

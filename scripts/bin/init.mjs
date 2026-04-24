@@ -4,7 +4,7 @@ import { cp, mkdir, stat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from '../lib/args.mjs';
 import { repoRoot, installPrecommit, gitignoreEnsure } from '../lib/git-utils.mjs';
-import { pluginRoot, readFileOrNull, writeAtomic } from '../lib/fs-utils.mjs';
+import { pluginRoot, readFileOrNull, writeAtomic, isMainModule } from '../lib/fs-utils.mjs';
 import { request } from '../lib/http-client.mjs';
 import { pullSource } from '../lib/remote-rules-pull.mjs';
 import { parse as parseYaml } from '../lib/yaml-min.mjs';
@@ -186,7 +186,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   run(process.argv.slice(2), { cwd: process.cwd(), env: process.env, stdout: process.stdout, stderr: process.stderr })
     .then(c => process.exit(c ?? 0));
 }

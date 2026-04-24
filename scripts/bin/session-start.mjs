@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // scripts/bin/session-start.mjs
-import { readFileOrNull, pluginRoot } from '../lib/fs-utils.mjs';
+import { readFileOrNull, pluginRoot, isMainModule } from '../lib/fs-utils.mjs';
 import { loadConfig } from '../lib/config-loader.mjs';
 import { getProvider } from '../lib/provider-client.mjs';
 import { ollamaHasModel } from '../lib/providers/ollama.mjs';
@@ -59,7 +59,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   run(process.argv.slice(2), { cwd: process.cwd(), env: process.env, stdout: process.stdout, stderr: process.stderr })
     .then(c => process.exit(c ?? 0));
 }

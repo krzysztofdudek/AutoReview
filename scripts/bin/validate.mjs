@@ -10,7 +10,7 @@ import { getProvider } from '../lib/provider-client.mjs';
 import { createIntentGate } from '../lib/intent-gate.mjs';
 import { reportVerdicts } from '../lib/report.mjs';
 import { createHistorySession } from '../lib/history.mjs';
-import { readFileOrNull, isBinary } from '../lib/fs-utils.mjs';
+import { readFileOrNull, isBinary, isMainModule } from '../lib/fs-utils.mjs';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
 import { pullSource } from '../lib/remote-rules-pull.mjs';
@@ -203,7 +203,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   run(process.argv.slice(2), { cwd: process.cwd(), env: process.env, stdout: process.stdout, stderr: process.stderr })
     .then(c => process.exit(c ?? 0));
 }
