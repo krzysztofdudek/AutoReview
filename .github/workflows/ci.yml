@@ -1,10 +1,11 @@
 name: CI
 
+# Auto-triggers disabled — this workflow is kept as a reference example of
+# wiring `npm test` + `npm run coverage` into GitHub Actions for downstream
+# users who adopt AutoReview. Runs only when dispatched manually from the
+# Actions tab. Flip `push` / `pull_request` back in if you want CI back.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:
