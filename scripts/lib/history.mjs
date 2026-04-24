@@ -23,6 +23,7 @@ function truncateFileField(rec) {
   const line = JSON.stringify(rec);
   const overflow = Buffer.byteLength(line) - MAX_RECORD_BYTES;
   if (overflow <= 0) return rec;
+  if (!rec.file) return rec;
   const fileBuf = Buffer.from(rec.file);
   const maxFileBytes = Math.max(0, fileBuf.length - overflow - ellipsisBytes);
   // Slice on the Buffer, then decode. Cut from the left (keep tail).
@@ -47,6 +48,10 @@ async function fitRecord(repoRoot, rec) {
   }
   if (Buffer.byteLength(line) > MAX_RECORD_BYTES && rec.reason) {
     rec.reason = '[... reason truncated]';
+    line = JSON.stringify(rec);
+  }
+  if (Buffer.byteLength(line) > MAX_RECORD_BYTES && rec.raw) {
+    rec.raw = '[... raw truncated]';
     line = JSON.stringify(rec);
   }
   return { rec, line, day };

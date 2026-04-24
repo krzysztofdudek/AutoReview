@@ -67,9 +67,21 @@ test('repeated long flag without multiple only keeps last', () => {
   assert.equal(r.values.mode, 'thinking');
 });
 
-test('missing value for flag (end of args) -> undefined, no crash', () => {
-  const r = parseArgs(['--mode']);
-  assert.equal(r.values.mode, undefined);
+test('missing value for flag (end of args) -> explicit error', () => {
+  // Silent undefined corrupts downstream config (cfg.review.mode=undefined, etc.)
+  // and hides user typos. Fail loud instead.
+  assert.throws(() => parseArgs(['--mode']), /--mode.*value|value.*--mode/i);
+});
+
+test('flag followed by another flag -> explicit error (not value-swallow)', () => {
+  // `--mode --rule foo` must NOT assign mode='--rule'. That's a user typo —
+  // they meant to specify a mode but forgot. Silent acceptance loses --rule
+  // and corrupts mode. Fail loud.
+  assert.throws(() => parseArgs(['--mode', '--rule', 'foo'], { multiple: ['rule'] }), /--mode.*value|value.*--mode/i);
+});
+
+test('short alias missing value -> explicit error', () => {
+  assert.throws(() => parseArgs(['-s'], { aliases: { s: 'scope' } }), /-s.*value|value.*-s|scope.*value/i);
 });
 
 test('-- stops parsing, remaining go to positional verbatim', () => {

@@ -116,20 +116,20 @@ test('I8 + paid provider without API key env -> [warn] printed, exit 0', async (
   } finally { await env.cleanup(); }
 });
 
-test('I9 + gitignore patched with 4 runtime patterns', async (t) => {
+test('I9 + local .autoreview/.gitignore written with 4 patterns', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('init');
   try {
     const r = await env.run('init', ['--provider', 'openai-compat']);
     assert.equal(r.code, 0);
-    const gi = await env.read('.gitignore');
+    const gi = await env.read('.autoreview/.gitignore');
     for (const pat of [
-      '.autoreview/config.personal.yaml',
-      '.autoreview/config.secrets.yaml',
-      '.autoreview/.history/',
-      '.autoreview/runtime/',
+      'config.personal.yaml',
+      'config.secrets.yaml',
+      '.history/',
+      'runtime/',
     ]) {
-      assert.ok(gi.includes(pat), `gitignore missing ${pat}`);
+      assert.ok(gi.includes(pat), `.autoreview/.gitignore missing ${pat}`);
     }
   } finally { await env.cleanup(); }
 });

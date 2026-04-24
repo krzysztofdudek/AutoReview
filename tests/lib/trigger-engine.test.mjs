@@ -192,3 +192,9 @@ test('evaluate NOT with dir predicate', () => {
   assert.equal(evaluate(ast, { path: 'src/a.ts', content: '', binary: false }), true);
   assert.equal(evaluate(ast, { path: 'tests/a.ts', content: '', binary: false }), false);
 });
+
+test('matchPath unterminated character class throws (no infinite loop)', { timeout: 2000 }, () => {
+  // glob with '[' and no matching ']': indexOf(']') returns -1, i=-1, then for-loop
+  // i++ brings i back to 0, producing an infinite loop that hangs the reviewer.
+  assert.throws(() => matchPath('[abc', 'abc'), /bracket|unterminated|\[/i);
+});

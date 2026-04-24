@@ -111,6 +111,24 @@ test('appendVerdict auto-populates ts when missing', async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('oversize record without file field does not crash', async () => {
+  // Records with providerError carry `raw` but may legitimately lack `file` at the
+  // call site (e.g. rule-level errors unattached to a specific path). If JSON line
+  // exceeds MAX_RECORD_BYTES, truncateFileField was called with rec.file=undefined,
+  // and `Buffer.from(undefined)` threw TypeError, killing the append.
+  const dir = await mkdtemp(join(tmpdir(), 'ar-hist-nofile-'));
+  try {
+    const longRaw = 'x'.repeat(5000);
+    await appendVerdict(dir, { rule: 'r1', mode: 'quick', provider: 'p', model: 'm', verdict: 'error', raw: longRaw });
+    const day = new Date().toISOString().slice(0, 10);
+    const body = await readFile(join(dir, '.autoreview/.history', `${day}.jsonl`), 'utf8');
+    const rec = JSON.parse(body.trim());
+    assert.equal(rec.rule, 'r1');
+    assert.equal(rec.verdict, 'error');
+    assert.ok(Buffer.byteLength(body.trim()) <= MAX_RECORD_BYTES);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('createHistorySession keeps one stream open per day', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ar-hist-sess-'));
   try {

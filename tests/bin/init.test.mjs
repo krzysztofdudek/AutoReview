@@ -122,16 +122,37 @@ test('existing different pre-commit hook without flag exits 1', async () => {
   }
 });
 
-test('.gitignore appended without duplicates', async () => {
+test('.autoreview/.gitignore written; root .gitignore untouched', async () => {
+  const { dir, cleanup } = await mkRepo();
+  const { dir: pluginDir, cleanup: cleanupPlugin } = await mkPluginRoot();
+  try {
+    // User may already have a root .gitignore with their own entries. init must not touch it.
+    await writeFile(join(dir, '.gitignore'), 'dist/\nuser-only-line\n');
+    const c = capture();
+    await run(['--provider', 'ollama'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir }, ...c });
+    const rootGi = await readFile(join(dir, '.gitignore'), 'utf8');
+    assert.equal(rootGi, 'dist/\nuser-only-line\n', 'root .gitignore must be left alone');
+    const localGi = await readFile(join(dir, '.autoreview/.gitignore'), 'utf8');
+    assert.match(localGi, /^config\.personal\.yaml$/m);
+    assert.match(localGi, /^config\.secrets\.yaml$/m);
+    assert.match(localGi, /^\.history\/$/m);
+    assert.match(localGi, /^runtime\/$/m);
+  } finally {
+    await cleanup();
+    await cleanupPlugin();
+  }
+});
+
+test('.autoreview/.gitignore rewritten idempotently on --upgrade', async () => {
   const { dir, cleanup } = await mkRepo();
   const { dir: pluginDir, cleanup: cleanupPlugin } = await mkPluginRoot();
   try {
     const c1 = capture();
     await run(['--provider', 'ollama'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir }, ...c1 });
     const c2 = capture();
-    await run(['--provider', 'ollama', '--upgrade'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir, }, ...c2 });
-    const body = await readFile(join(dir, '.gitignore'), 'utf8');
-    assert.equal((body.match(/\.autoreview\/\.history\//g) || []).length, 1);
+    await run(['--provider', 'ollama', '--upgrade'], { cwd: dir, env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginDir }, ...c2 });
+    const body = await readFile(join(dir, '.autoreview/.gitignore'), 'utf8');
+    assert.equal((body.match(/^runtime\/$/gm) || []).length, 1);
   } finally {
     await cleanup();
     await cleanupPlugin();

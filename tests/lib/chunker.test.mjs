@@ -63,3 +63,19 @@ test('skip reason for overflow mentions window', () => {
   assert.equal(r.action, 'skip');
   assert.match(r.reason, /overflow|window/);
 });
+
+test('skip when available budget smaller than truncation marker', () => {
+  // contextWindowBytes=1760, PROMPT_BOILERPLATE_BYTES=1750 → available = 10 bytes.
+  // TRUNC_MARKER is 16 bytes. Without a guard, sliceBytes = 10 - 16 = -6,
+  // producing a truncated output of ~(fileBytes - 6) + 16 bytes — wildly over budget.
+  // Correct behavior: skip, because no meaningful truncation fits.
+  const r = fitFile({
+    fileContent: 'x'.repeat(20),
+    rule: { body: '' },
+    diff: null,
+    contextWindowBytes: 1760,
+    outputReserveBytes: 0,
+  });
+  assert.equal(r.action, 'skip');
+  assert.match(r.reason, /window|budget|marker|overflow/);
+});

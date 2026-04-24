@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // scripts/bin/init.mjs
-import { cp, mkdir, stat, readFile } from 'node:fs/promises';
+import { mkdir, stat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from '../lib/args.mjs';
-import { repoRoot, installPrecommit, gitignoreEnsure } from '../lib/git-utils.mjs';
+import { repoRoot, installPrecommit } from '../lib/git-utils.mjs';
 import { pluginRoot, readFileOrNull, writeAtomic, isMainModule } from '../lib/fs-utils.mjs';
 import { request } from '../lib/http-client.mjs';
 import { pullSource } from '../lib/remote-rules-pull.mjs';
 import { parse as parseYaml } from '../lib/yaml-min.mjs';
 import { ollamaHasModel } from '../lib/providers/ollama.mjs';
+import { syncRuntime } from '../lib/runtime-sync.mjs';
 
 const KNOWN_PROVIDERS = ['ollama', 'anthropic', 'openai', 'google', 'openai-compat', 'claude-code', 'codex', 'gemini-cli'];
 
@@ -17,13 +18,6 @@ async function ollamaReachable() {
     const r = await request({ url: 'http://localhost:11434/api/tags', timeoutMs: 1000 });
     return r.status === 200;
   } catch { return false; }
-}
-
-async function copyPluginRuntime(repoRootPath, root) {
-  const dst = join(repoRootPath, '.autoreview/runtime');
-  await mkdir(join(dst, 'bin'), { recursive: true });
-  await cp(join(root, 'scripts/lib'), join(dst, 'lib'), { recursive: true });
-  await cp(join(root, 'scripts/bin/validate.mjs'), join(dst, 'bin/validate.mjs'));
 }
 
 export async function run(argv, ctx) {
@@ -117,13 +111,16 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     ?? '# Fill in API keys. Gitignored.\n';
   await writeAtomic(join(autoreview, 'config.secrets.yaml'), secretsTemplate);
 
-  // Step 8: gitignore
-  await gitignoreEnsure(root, [
-    '.autoreview/config.personal.yaml',
-    '.autoreview/config.secrets.yaml',
-    '.autoreview/.history/',
-    '.autoreview/runtime/',
-  ]);
+  // Step 8: gitignore — local to .autoreview/ so we never touch the user's root .gitignore.
+  // Paths are relative to this file's directory (git honors nested .gitignore per-dir).
+  const localGitignore = [
+    'config.personal.yaml',
+    'config.secrets.yaml',
+    '.history/',
+    'runtime/',
+    '',
+  ].join('\n');
+  await writeAtomic(join(autoreview, '.gitignore'), localGitignore);
 
   // Step 9: precommit hook
   if (values['install-precommit']) {
@@ -154,9 +151,9 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     stdout.write(`pre-commit hook NOT installed (pass --install-precommit to install).\n`);
   }
 
-  // Step 10: copy runtime
+  // Step 10: copy runtime (writes .version sentinel; future upgrades re-sync automatically).
   try {
-    await copyPluginRuntime(root, root_plugin);
+    await syncRuntime(root, root_plugin);
   } catch (err) {
     stderr.write(`[warn] runtime copy failed: ${err.message}\n`);
   }

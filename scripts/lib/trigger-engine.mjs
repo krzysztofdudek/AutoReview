@@ -107,6 +107,7 @@ function toRegex(glob) {
     } else if (c === '?') rx += '[^/]';
     else if (c === '[') {
       const end = glob.indexOf(']', i);
+      if (end === -1) throw new Error(`unterminated '[' bracket in glob: ${glob}`);
       rx += glob.slice(i, end + 1);
       i = end;
     } else if ('.+^${}()|\\'.includes(c)) rx += '\\' + c;
