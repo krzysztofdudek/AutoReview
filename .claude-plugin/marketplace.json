@@ -7,7 +7,7 @@
     {
       "name": "autoreview",
       "source": "./",
-      "description": "Per-file LLM code review against Markdown rules. Ollama-first, offline, zero npm deps."
+      "description": "Per-file architecture gates for your coding agent. Markdown rules verified on every commit. Ollama-first, offline, zero npm deps."
     }
   ]
 }

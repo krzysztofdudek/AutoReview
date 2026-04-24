@@ -2,7 +2,7 @@
 
 **A rule file is a suggestion. This turns it into a verdict on every commit.**
 
-An LLM reviewer that reads one file at a time and checks it against Markdown rules you wrote in plain English.
+Per-file architecture gates for your coding agent. Write rules in plain English Markdown; a reviewer verifies each file against the rules that match it, on every commit. Matching runs locally; the reviewer runs on a local Ollama or any API model.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A520-green.svg)](https://nodejs.org)
@@ -336,6 +336,9 @@ Yes. `dir:"src/api"` is shorthand for `path:"src/api/**"`.
 **What if I want to stop?**
 Delete `.autoreview/` and the pre-commit hook. No runtime dependencies, no build hooks, nothing left behind.
 
+**Is this just another AI code review bot?**
+No. AI code review bots scan diffs post-hoc. AutoReview runs a reviewer against specific rules you wrote, on every commit, per file. No rules match — nothing runs, nothing costs. The rules are yours; AutoReview is the gate that makes them actually enforceable.
+
 ## Docs
 
 - [SECURITY.md](SECURITY.md) — data flow, sandboxing, fail-open invariants, prompt-injection surface.
@@ -360,5 +363,5 @@ MIT
 <div align="center">
   <img src="yggdrasil.svg" alt="AutoReview" width="120" />
   <br/><br/>
-  <sub>Part of the Yggdrasil family. Questions? Open an issue.</sub>
+  <sub>Part of the <a href="https://github.com/krzysztofdudek/Yggdrasil">Yggdrasil</a> family. Questions? Open an issue.</sub>
 </div>

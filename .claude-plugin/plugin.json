@@ -1,7 +1,7 @@
 {
   "name": "autoreview",
   "version": "0.1.0",
-  "description": "Per-file LLM code review against Markdown rules. Ollama-first, offline, zero npm deps.",
+  "description": "Per-file architecture gates for your coding agent. Markdown rules verified on every commit. Ollama-first, offline, zero npm deps.",
   "author": {
     "name": "Krzysztof Dudek",
     "url": "https://github.com/krzysztofdudek"
@@ -10,14 +10,18 @@
   "homepage": "https://github.com/krzysztofdudek/AutoReview",
   "repository": "https://github.com/krzysztofdudek/AutoReview.git",
   "keywords": [
-    "code-review",
-    "llm",
+    "claude-code-plugin",
+    "claude-code",
+    "pre-commit-hook",
     "ollama",
-    "anthropic",
-    "openai",
-    "pre-commit",
-    "linter",
-    "convention-enforcement",
-    "claude-code-plugin"
+    "architecture-enforcement",
+    "code-guardrails",
+    "rule-engine",
+    "agentic-guardrails",
+    "agents-md",
+    "claude-md",
+    "markdown-rules",
+    "ai-coding",
+    "coding-agents"
   ]
 }
