@@ -7,7 +7,7 @@ Notes for agents working on **this repo** (the AutoReview plugin itself — not 
 AutoReview is a Claude Code plugin that enforces per-file architecture rules via markdown files + an LLM reviewer, hooked into `git commit`. It ships as:
 
 - A Claude Code plugin (`.claude-plugin/plugin.json`, `hooks/`, `commands/`, `skills/`).
-- A zero-dep Node ≥20 CLI under `scripts/bin/` + library under `scripts/lib/`.
+- A zero-dep Node ≥22 CLI under `scripts/bin/` + library under `scripts/lib/`.
 - Templates (`templates/`) copied into user repos by `/autoreview:init`.
 
 Target user installs the plugin, runs `/autoreview:init` in their repo, and gets a pre-commit hook that validates staged files against rules in `.autoreview/rules/`.

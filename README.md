@@ -5,7 +5,7 @@
 Per-file architecture gates for your coding agent. Write rules in plain English Markdown; a reviewer verifies each file against the rules that match it, on every commit. Matching runs locally; the reviewer runs on a local Ollama or any API model.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node](https://img.shields.io/badge/Node-%E2%89%A520-green.svg)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A522-green.svg)](https://nodejs.org)
 [![Zero deps](https://img.shields.io/badge/npm%20deps-0-blue.svg)](./package.json)
 
 ---

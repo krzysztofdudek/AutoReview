@@ -43,3 +43,13 @@ test('whichBinary resists shell injection in name', async () => {
   const p = await whichBinary('x; echo INJECTED');
   assert.equal(p, null);
 });
+
+test('runCli tolerates EPIPE when child closes stdin before parent write completes', async () => {
+  // ok.sh does not read stdin and exits instantly — on fast kernels (CI Ubuntu)
+  // the child closes its stdin pipe before our write flushes, triggering EPIPE
+  // as an uncaught exception. The runner must swallow that and return the
+  // captured stdout/exit normally.
+  const r = await runCli({ binary: join(fixDir, 'ok.sh'), args: [], stdin: 'payload that cannot land' });
+  assert.equal(r.exitCode, 0);
+  assert.match(r.stdout, /satisfied/);
+});

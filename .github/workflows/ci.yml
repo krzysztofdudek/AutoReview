@@ -1,10 +1,10 @@
 name: CI
 
-# Auto-triggers disabled — this workflow is kept as a reference example of
-# wiring `npm test` + `npm run coverage` into GitHub Actions for downstream
-# users who adopt AutoReview. Runs only when dispatched manually from the
-# Actions tab. Flip `push` / `pull_request` back in if you want CI back.
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20.x, 22.x]
+        node-version: [22.x, 24.x]
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js ${{ matrix.node-version }}
@@ -27,10 +27,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js 22.x
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v4
         with:
-          node-version: 22.x
+          node-version: 24.x
       - name: Configure git identity for e2e scratch repos
         run: |
           git config --global user.email "ci@test"

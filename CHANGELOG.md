@@ -13,6 +13,12 @@ All notable changes to AutoReview documented here. Format based on [Keep a Chang
 - `trigger-engine.toRegex` infinite-looped on globs with an unterminated `[` (e.g. `[abc` with no closing `]`): `indexOf(']', i)` returned `-1`, the for-loop's `i++` reset `i` to `0`, re-processing the same input forever and hanging the reviewer. Now throws `unterminated '[' bracket in glob`.
 - Every `scripts/bin/*.mjs` entrypoint silently no-opped on Windows. The main-module guard `import.meta.url === \`file://${process.argv[1]}\`` never matched — `import.meta.url` is `file:///C:/...` while the constructed URL used backslashes and two slashes. Node imported the module, top-level code ran, but `run()` was never invoked. Exit 0, no output, no artifacts. First-time Windows users saw `init --install-precommit` "succeed" with no `.autoreview/` and no hook installed. Replaced with a cross-platform `isMainModule()` helper in `fs-utils.mjs` using `pathToFileURL(argv[1]).href`. Applied to all 11 entrypoints.
 
+### Changed
+- **Node ≥22 required.** The `npm test` glob pattern `tests/**/*.test.mjs` is expanded by `node --test` itself; Node 20 does not support `**` as a test-file pattern and every CI run exited with "Could not find tests/**/*.test.mjs". Node 20 hit end-of-life in April 2026, so `engines.node` is bumped rather than worked around. CI matrix updated to `[22.x, 24.x]`.
+
+### Fixed
+- `runCli` in `cli-base.mjs` threw an uncaught `EPIPE` on fast kernels (Linux/CI) whenever the child process closed its stdin pipe before the parent finished writing. The Claude Code and Codex provider tests were flaking on GitHub Actions with `failureType: uncaughtException, error: 'write EPIPE'`. A `child.stdin.on('error', () => {})` handler now swallows the write-side close — the real outcome is already captured via stdout/close events.
+
 ### Added
 - Automatic `.autoreview/runtime/` upgrade on SessionStart. Previously, bumping the plugin left the bundled runtime pinned to whatever version was installed the last time `init --upgrade` ran, so pre-commit hooks kept executing stale code indefinitely. A `.autoreview/runtime/.version` sentinel is now written on init; SessionStart compares it against the installed plugin manifest and re-copies `scripts/lib/` + `scripts/bin/validate.mjs` when they diverge. `[autoreview] runtime upgraded X → Y` reported to stdout so the agent can relay the change. Shell / CI invocations (no `CLAUDE_PLUGIN_ROOT`) are unaffected — they keep using the bundled copy as before.
 

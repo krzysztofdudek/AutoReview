@@ -23,6 +23,11 @@ export function runCli({ binary, args = [], stdin = null, timeoutMs = 120_000, e
       clearTimeout(killer);
       resolve({ stdout, stderr, exitCode: code ?? -1, timedOut });
     });
+    // Child may exit and tear down its stdin pipe before our write lands — on fast
+    // kernels that surfaces as an uncaught EPIPE. Swallow: stdout/close already hold
+    // the real outcome, and callers that actually need to confirm their input arrived
+    // should check the response body, not the write.
+    child.stdin.on('error', () => {});
     if (stdin !== null) {
       child.stdin.write(stdin);
       child.stdin.end();
