@@ -4,6 +4,21 @@ All notable changes to AutoReview documented here. Format based on [Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.1]
+
+### Fixed
+- `chunker.fitFile` produced a negative `sliceBytes` when the available budget was ≤ the 16-byte truncation marker, yielding truncated output that silently exceeded the context window. Guard added — sub-marker budgets now `skip` with a clear reason.
+- `history.truncateFileField` crashed with `TypeError: Buffer.from(undefined)` whenever an oversize record (>3500B) lacked a `file` field (e.g. provider-error records carrying a large `raw`). Missing `file` is now a no-op; `raw` gets a final truncation pass so the line stays within `MAX_RECORD_BYTES`.
+- `args.parseArgs` silently accepted `--flag` without a value, writing `undefined` into the config, and happily swallowed the next flag as the value (`--mode --rule foo` → `mode='--rule'`). Missing values now throw an explicit `--flag requires a value` error.
+- `trigger-engine.toRegex` infinite-looped on globs with an unterminated `[` (e.g. `[abc` with no closing `]`): `indexOf(']', i)` returned `-1`, the for-loop's `i++` reset `i` to `0`, re-processing the same input forever and hanging the reviewer. Now throws `unterminated '[' bracket in glob`.
+- Every `scripts/bin/*.mjs` entrypoint silently no-opped on Windows. The main-module guard `import.meta.url === \`file://${process.argv[1]}\`` never matched — `import.meta.url` is `file:///C:/...` while the constructed URL used backslashes and two slashes. Node imported the module, top-level code ran, but `run()` was never invoked. Exit 0, no output, no artifacts. First-time Windows users saw `init --install-precommit` "succeed" with no `.autoreview/` and no hook installed. Replaced with a cross-platform `isMainModule()` helper in `fs-utils.mjs` using `pathToFileURL(argv[1]).href`. Applied to all 11 entrypoints.
+
+### Changed
+- `init` no longer modifies the user's repository root `.gitignore`. A dedicated `.autoreview/.gitignore` is written instead (git honors nested per-directory `.gitignore` files), so AutoReview's runtime artifacts are ignored without touching any of the user's existing patterns.
+- README, plugin manifest, and marketplace description repositioned away from "LLM reviewer" as the lead framing toward "per-file architecture gates" / "rule engine". Mechanism description unchanged deeper in the README. Keywords dropped `code-review`, `llm`, `linter`, `convention-enforcement`; added `architecture-enforcement`, `rule-engine`, `agentic-guardrails`, `agents-md`, `claude-md`, `markdown-rules`, `pre-commit-hook`. FAQ gained "Is this just another AI code review bot?". Footer "Yggdrasil family" link now clickable.
+
+## [0.1.0]
+
 ### Added
 - Initial implementation covering all 29 points of the functional specification.
 - Claude Code plugin with 6 skills, 8 slash commands (including `/autoreview:history`), and SessionStart hook.
@@ -34,7 +49,5 @@ All notable changes to AutoReview documented here. Format based on [Keep a Chang
 - `init --upgrade` + `--precommit-{skip,append}` branches covered by tests.
 - `[reject]` lines under soft enforcement are now tagged `(warn-only — commit proceeds under soft enforcement)` so users don't mistake a soft-mode warning for a hard block.
 - `[reject]` hints now include `why (Claude Code)` + `why (shell)` + `skip:` + `edit:` + `help:` lines inline. Blocked users don't have to leave the terminal to know what to do.
-
-## [0.1.0] — TBD
 
 First tagged release.
