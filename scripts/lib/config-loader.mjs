@@ -45,6 +45,17 @@ export const DEFAULT_CONFIG = {
   secrets: {},
 };
 
+const DEFAULT_PARALLEL = {
+  ollama: 1,
+  'openai-compat': 5,
+  anthropic: 10,
+  openai: 10,
+  google: 10,
+  'claude-code': 3,
+  codex: 3,
+  'gemini-cli': 3,
+};
+
 function deepMerge(base, overlay) {
   if (overlay === undefined) return base;
   if (Array.isArray(overlay) || typeof overlay !== 'object' || overlay === null) return overlay;
@@ -93,6 +104,19 @@ function validate(cfg) {
   const cwb = cfg.review.context_window_bytes;
   if (cwb !== 'auto' && (!Number.isInteger(cwb) || cwb <= 0)) {
     throw new Error(`review.context_window_bytes must be 'auto' or positive integer, got ${cwb}`);
+  }
+  for (const [name, providerCfg] of Object.entries(cfg.provider)) {
+    if (name === 'active') continue;
+    if (typeof providerCfg !== 'object' || providerCfg === null) continue;
+    if (providerCfg.parallel != null) {
+      if (!Number.isInteger(providerCfg.parallel) || providerCfg.parallel < 1) {
+        throw new Error(
+          `provider.${name}.parallel must be a positive integer, got ${JSON.stringify(providerCfg.parallel)}`,
+        );
+      }
+    } else {
+      providerCfg.parallel = DEFAULT_PARALLEL[name] ?? 1;
+    }
   }
 }
 

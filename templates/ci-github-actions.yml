@@ -2,11 +2,11 @@
 # Runs the reviewer over PR diffs on every pull request. Exit 1 on rule reject = PR fails.
 #
 # Why we clone AutoReview in CI:
-#   `/autoreview:init` installs a runtime copy at .autoreview/runtime/ on the developer's
-#   machine so pre-commit hooks work without Claude Code running. That runtime is
-#   gitignored — it's a mirror of the plugin source, not meant to be committed. So CI
-#   can't rely on it being in your repo checkout. Instead we clone AutoReview directly
-#   and invoke the reviewer from there.
+#   The `autoreview:setup` skill (or running scripts/bin/init.mjs directly) installs a
+#   runtime copy at .autoreview/runtime/ on the developer's machine so pre-commit hooks
+#   work without Claude Code running. That runtime is gitignored — it's a mirror of the
+#   plugin source, not meant to be committed. So CI can't rely on it being in your repo
+#   checkout. Instead we clone AutoReview directly and invoke the reviewer from there.
 #
 # Provider: default is Ollama (local, free). Swap the Ollama install/pull/serve steps
 # for an API-key secret if you want Anthropic/OpenAI/Google (see the commented block

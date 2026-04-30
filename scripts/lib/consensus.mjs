@@ -1,26 +1,18 @@
 // scripts/lib/consensus.mjs
+//
+// No outer Promise.race timeout: an outer race timer would start ticking the moment
+// the verify promise is created — which is before sem.acquire() in the wrapped
+// provider — so calls queued behind a slow LLM would die in the queue instead of
+// running. Each provider already enforces its own timeout (HTTP `timeoutMs` for
+// network providers, `runCli` `timeoutMs` for CLI providers); that timer starts
+// when the slot is actually held.
 
-async function withTimeout(promise, ms, label) {
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-export async function voteConsensus(provider, prompt, { consensus = 1, maxTokens, reasoningEffort, timeoutMs = 120_000 } = {}) {
+export async function voteConsensus(provider, prompt, { consensus = 1, maxTokens, reasoningEffort } = {}) {
   const calls = [];
   for (let i = 0; i < consensus; i++) {
     calls.push(
-      withTimeout(
-        provider.verify(prompt, { maxTokens, reasoningEffort }),
-        timeoutMs,
-        `${provider.name} verify call ${i + 1}/${consensus}`,
-      ).catch(err => ({ satisfied: false, providerError: true, raw: String(err) })),
+      provider.verify(prompt, { maxTokens, reasoningEffort })
+        .catch(err => ({ satisfied: false, providerError: true, raw: String(err) })),
     );
   }
   const results = await Promise.all(calls);

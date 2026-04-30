@@ -3,7 +3,7 @@
 // Binary detection centralized here per design §3.
 
 import { readFile } from 'node:fs/promises';
-import { join, relative, isAbsolute } from 'node:path';
+import { join, relative, isAbsolute, sep } from 'node:path';
 
 async function runLimited(items, limit, fn) {
   const results = new Array(items.length);
@@ -46,7 +46,9 @@ async function readEntries(repoRoot, paths, diffFn) {
     // regardless of how the caller spelled the file.
     const abs = isAbsolute(p) ? p : join(repoRoot, p);
     const { content, binary, size } = await readWithBinaryDetect(abs);
-    const rel = isAbsolute(p) && p.startsWith(repoRoot + '/')
+    // Use the platform separator at the boundary so this works on Windows where
+    // both `p` and `repoRoot` use `\` after `path.resolve()`/`isAbsolute()` round-trips.
+    const rel = isAbsolute(p) && p.startsWith(repoRoot + sep)
       ? p.slice(repoRoot.length + 1)
       : p;
     const diffResult = diffFn(rel);
@@ -84,7 +86,8 @@ export async function resolveScope({ repoRoot, scope = null, sha = null, files =
   if (scope === 'all') {
     const paths = [];
     for await (const abs of walk({ root: repoRoot, cap: walkCap, onCapReached: () => warnings.push(`reached walk cap (${walkCap} files)`) })) {
-      paths.push(relative(repoRoot, abs));
+      // Normalize to POSIX-style separators so trigger globs and display match cross-platform.
+      paths.push(relative(repoRoot, abs).split(sep).join('/'));
     }
     return { entries: await readEntries(repoRoot, paths, () => null), warnings };
   }
@@ -96,7 +99,7 @@ export async function resolveScope({ repoRoot, scope = null, sha = null, files =
     const paths = [];
     for (const d of dirs) {
       for await (const abs of walk({ root: join(repoRoot, d), cap: walkCap })) {
-        paths.push(relative(repoRoot, abs));
+        paths.push(relative(repoRoot, abs).split(sep).join('/'));
       }
     }
     return { entries: await readEntries(repoRoot, paths, () => null), warnings };

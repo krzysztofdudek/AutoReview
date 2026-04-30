@@ -2,14 +2,20 @@ version: "0.1"
 
 provider:
   active: ollama
-  ollama:        { endpoint: "http://localhost:11434", model: "qwen2.5-coder:7b" }
-  claude-code:   { model: haiku }
-  codex:         { model: "gpt-5" }
-  gemini-cli:    { model: "gemini-2.5-flash" }
-  anthropic:     { model: "claude-haiku-4-5" }
-  openai:        { model: "gpt-4o-mini" }
-  google:        { model: "gemini-2.5-flash" }
-  openai-compat: { endpoint: "", model: "" }
+  # Optional `parallel: <int>` per provider caps concurrent in-flight LLM calls. Defaults
+  # are filled in at load time when omitted: ollama 1 (single GPU thrashes under concurrency),
+  # openai-compat 5 (LM Studio / vLLM batched servers), anthropic/openai/google 10 (paid APIs
+  # with generous RPM tiers — free-tier OpenAI users at 4 RPM should drop to 2–3 manually),
+  # claude-code/codex/gemini-cli 3 (CLI subprocess startup overhead caps useful concurrency).
+  # 429/408 responses retry with exponential backoff up to 4 attempts honouring Retry-After.
+  ollama:        { endpoint: "http://localhost:11434", model: "qwen2.5-coder:7b", parallel: 1 }
+  claude-code:   { model: haiku, parallel: 3 }
+  codex:         { model: "gpt-5", parallel: 3 }
+  gemini-cli:    { model: "gemini-2.5-flash", parallel: 3 }
+  anthropic:     { model: "claude-haiku-4-5", parallel: 10 }
+  openai:        { model: "gpt-4o-mini", parallel: 10 }
+  google:        { model: "gemini-2.5-flash", parallel: 10 }
+  openai-compat: { endpoint: "", model: "", parallel: 5 }
 
 review:
   evaluate: diff

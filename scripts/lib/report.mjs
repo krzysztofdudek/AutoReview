@@ -17,7 +17,7 @@ export function reportVerdicts(entry, verdicts, mode, stderr, { softContext = fa
     }
     if (v.verdict === 'fail' && mode !== 'thinking') {
       // Slash form works inside Claude Code; node form works in any shell (copy-paste safe).
-      stderr.write(`  why (Claude Code):  /autoreview:validate --files '${entry.path}' --rule ${v.rule} --mode thinking\n`);
+      stderr.write(`  why (Claude Code):  /autoreview:review --files '${entry.path}' --rule ${v.rule} --mode thinking\n`);
       stderr.write(`  why (shell):        node .autoreview/runtime/bin/validate.mjs --files '${entry.path}' --rule ${v.rule} --mode thinking\n`);
       stderr.write(`  skip:               // @autoreview-ignore ${v.rule} <your reason>   (above the offending code)\n`);
       stderr.write(`  edit:               .autoreview/rules/${v.rule}.md   (rule itself is wrong? open and change the body)\n`);

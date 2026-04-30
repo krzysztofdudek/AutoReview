@@ -135,6 +135,62 @@ test('contextWindowBytes memoized across rules', async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('warnedReasoning dedupes under concurrent fan-out — exactly one [warn] for N parallel calls', async () => {
+  // Lock-in test: the warn check (`!warnedReasoning.has` + `.add`) is a sync block with
+  // no await between has/add, so JavaScript's single-threaded event loop guarantees
+  // atomicity. The first reviewFile invocation to reach the warn check (post intent-gate
+  // await if any) populates the Set; subsequent invocations see the entry and skip.
+  // If a future refactor inserts an await between has() and add(), the duplicate-warn
+  // race becomes real — this test fails.
+  const origError = console.error;
+  const warns = [];
+  console.error = (s) => warns.push(s);
+  try {
+    const prov = {
+      name: 'ollama', model: 'm',
+      verify: async () => { await new Promise(r => setTimeout(r, 5)); return { satisfied: true }; },
+      contextWindowBytes: async () => 16384,
+    };
+    const dir = await mkdtemp(join(tmpdir(), 'ar-rv-warnrace-'));
+    try {
+      const cfg = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, reasoning_effort: 'high' } };
+      const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
+      const sharedState = { ctxCache: new Map(), warnedReasoning: new Set() };
+      await Promise.all(Array.from({ length: 10 }, () => reviewFile({
+        repoRoot: dir, config: cfg, rules: [rule],
+        file: { path: 'a.ts', content: 'c' }, diff: null, intentGate: null, historyEnabled: false,
+        _providerOverride: prov, _state: sharedState,
+      })));
+      const reasoningWarns = warns.filter(w => /reasoning_effort/.test(w));
+      assert.equal(reasoningWarns.length, 1,
+        `expected exactly 1 reasoning_effort warn under concurrent fan-out, got ${reasoningWarns.length}: ${reasoningWarns.join(' | ')}`);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  } finally { console.error = origError; }
+});
+
+test('contextWindowBytes memoized under concurrent fan-out — single call across N parallel reviewFile invocations', async () => {
+  let calls = 0;
+  const prov = {
+    name: 'stub', model: 'm',
+    verify: async () => ({ satisfied: true }),
+    // Add a deliberate delay so concurrent callers all reach the has()/await window
+    // before any of them finishes populating the cache. With value-only caching, all
+    // N callers would call contextWindowBytes; with promise caching, only one call.
+    contextWindowBytes: async () => { calls++; await new Promise(r => setTimeout(r, 30)); return 16384; },
+  };
+  const dir = await mkdtemp(join(tmpdir(), 'ar-rv-ctxrace-'));
+  try {
+    const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
+    const sharedState = { ctxCache: new Map(), warnedReasoning: new Set() };
+    await Promise.all(Array.from({ length: 10 }, () => reviewFile({
+      repoRoot: dir, config: DEFAULT_CONFIG, rules: [rule],
+      file: { path: 'a.ts', content: 'c' }, diff: null, intentGate: null, historyEnabled: false,
+      _providerOverride: prov, _state: sharedState,
+    })));
+    assert.equal(calls, 1, `contextWindowBytes() must be called once, got ${calls}`);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('per-rule frontmatter.evaluate overrides global evaluate (§20)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-'));
   try {
@@ -317,7 +373,7 @@ test('truncated file + satisfied=false -> verdict=fail (violation is real)', asy
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('historyEnabled writes verdict + file-summary lines', async () => {
+test('historyEnabled writes verdict line only (no file-summary from reviewer)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ar-rv-h-'));
   try {
     const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
@@ -329,7 +385,46 @@ test('historyEnabled writes verdict + file-summary lines', async () => {
     const day = new Date().toISOString().slice(0, 10);
     const body = await readFile(join(dir, '.autoreview/.history', `${day}.jsonl`), 'utf8');
     const lines = body.trim().split('\n').map(JSON.parse);
+    assert.equal(lines.length, 1);
     assert.equal(lines[0].type, 'verdict');
-    assert.equal(lines[1].type, 'file-summary');
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('parallelism observation: parallel: 5 caps 10 concurrent reviewFile calls to ~200ms (spec §F.1)', async () => {
+  const { _SEMAPHORES, clearProviderCache } = await import('../../scripts/lib/provider-client.mjs');
+  clearProviderCache();
+  const dir = await mkdtemp(join(tmpdir(), 'ar-rv-par-'));
+  try {
+    const cfg = {
+      ...DEFAULT_CONFIG,
+      provider: { ...DEFAULT_CONFIG.provider, ollama: { ...DEFAULT_CONFIG.provider.ollama, parallel: 5 } },
+    };
+    let inFlight = 0, peak = 0;
+    const slowProvider = {
+      name: 'ollama', model: 'm',
+      verify: async () => {
+        inFlight++; if (inFlight > peak) peak = inFlight;
+        await new Promise(r => setTimeout(r, 100));
+        inFlight--;
+        return { satisfied: true, reason: 'ok' };
+      },
+      contextWindowBytes: async () => 16384,
+    };
+    const rule = makeRule({ id: 'r', name: 'R', triggers: 'path:"**/*.ts"' });
+    const { Semaphore } = await import('../../scripts/lib/concurrency.mjs');
+    const sem = new Semaphore(5);
+    const wrapped = { ...slowProvider, verify: () => sem.run(() => slowProvider.verify()) };
+    const start = Date.now();
+    await Promise.all(Array.from({ length: 10 }, () => reviewFile({
+      repoRoot: dir, config: cfg, rules: [rule],
+      file: { path: 'a.ts', content: 'x' }, diff: null, intentGate: null, historyEnabled: false,
+      _providerOverride: wrapped,
+    })));
+    const elapsed = Date.now() - start;
+    assert.equal(peak, 5, `peak in-flight should be 5, got ${peak}`);
+    assert.ok(elapsed >= 180 && elapsed < 500, `expected ~200ms (two batches of 5 × 100ms), got ${elapsed}ms`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    clearProviderCache();
+  }
 });

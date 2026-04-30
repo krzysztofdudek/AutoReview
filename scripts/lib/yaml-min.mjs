@@ -95,9 +95,13 @@ function coerceBare(s) {
 }
 
 export function parse(text) {
+  // Normalize CRLF → LF so trailing `\r` on the last line (e.g. when fm came from
+  // `splitFrontmatter` cut at `\n---` and the file uses CRLF) doesn't slip through
+  // `split(/\r?\n/)` and break key-line regexes that anchor on `$`.
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '');
   text = text.replace(/^---\s*\n/, '');
   if (/\n---\s*\n/.test(text)) throw new YamlError('multi-document streams not supported', -1);
-  const rawLines = text.split(/\r?\n/);
+  const rawLines = text.split('\n');
   const lines = [];
   for (let i = 0; i < rawLines.length; i++) {
     const stripped = stripComment(rawLines[i]);

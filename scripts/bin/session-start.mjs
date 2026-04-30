@@ -22,7 +22,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   const cfgRaw = await readFileOrNull(cfgPath);
   if (!cfgRaw) {
     // Surface an actionable hint the agent can relay to the user.
-    stdout.write('[autoreview] plugin is installed but `.autoreview/` does not exist in this repo. Nothing will be reviewed. Run `/autoreview:init --provider ollama --install-precommit` (or another provider) to scaffold it.\n');
+    stdout.write('[autoreview] plugin is installed but `.autoreview/` does not exist in this repo. Nothing will be reviewed. Invoke the `autoreview:setup` skill (or run `/autoreview:setup`) to scaffold it.\n');
     return 0;
   }
 

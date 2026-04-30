@@ -2,7 +2,7 @@
 // Rule authoring helpers — rendering YAML frontmatter + writing file.
 
 import { mkdir } from 'node:fs/promises';
-import { join, dirname, resolve, isAbsolute } from 'node:path';
+import { join, dirname, resolve, isAbsolute, sep } from 'node:path';
 import { writeAtomic } from './fs-utils.mjs';
 
 function validateRelativePath(relativePath) {
@@ -38,10 +38,14 @@ export async function saveRule({ repoRoot, relativePath, content }) {
   const rulesDir = resolve(repoRoot, '.autoreview/rules');
   const abs = resolve(rulesDir, relativePath);
   // Belt-and-braces: even with validation above, verify the resolved path stays inside the rules dir.
-  if (abs !== rulesDir && !abs.startsWith(rulesDir + '/')) {
+  // Use the platform path separator at the boundary (POSIX `/`, Windows `\`) — both `rulesDir` and
+  // `abs` come from the same `resolve()` and thus use the same separator on each platform.
+  if (abs !== rulesDir && !abs.startsWith(rulesDir + sep)) {
     throw new Error(`relativePath escapes .autoreview/rules: ${relativePath}`);
   }
   await mkdir(dirname(abs), { recursive: true });
   await writeAtomic(abs, content);
-  return abs;
+  // Return a POSIX-style path so callers (display, tests) get a consistent string
+  // across platforms. The file system path itself is correctly `abs` on disk.
+  return abs.split(sep).join('/');
 }

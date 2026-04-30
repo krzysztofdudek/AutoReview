@@ -1,7 +1,7 @@
 import { runCli, whichBinary } from '../cli-base.mjs';
 import { parseResponse } from '../response-parser.mjs';
 
-export function create({ model, _binary = 'gemini', _runCli = runCli }) {
+export function create({ model, timeoutMs = 120_000, _binary = 'gemini', _runCli = runCli }) {
   return {
     name: 'gemini-cli', model,
     async isAvailable() { return !!(await whichBinary(_binary)); },
@@ -10,7 +10,7 @@ export function create({ model, _binary = 'gemini', _runCli = runCli }) {
         binary: _binary,
         args: ['-p', prompt, '-o', 'json', '-m', model],
         stdin: null,
-        timeoutMs: 120_000,
+        timeoutMs,
       });
       if (r.timedOut) return { satisfied: false, providerError: true, raw: 'timeout' };
       if (r.spawnError === 'E2BIG') return { satisfied: false, providerError: true, raw: 'prompt too large for arg mode' };

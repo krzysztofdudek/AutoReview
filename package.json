@@ -1,6 +1,6 @@
 {
   "name": "autoreview-plugin",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -15,9 +15,10 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "test": "node --test --test-reporter=spec 'tests/**/*.test.mjs'",
-    "test:lib": "node --test --test-reporter=spec tests/lib/*.test.mjs",
-    "test:e2e": "AUTOREVIEW_E2E=1 node --test --test-concurrency=1 --test-reporter=spec 'tests/e2e/cli-*.test.mjs'",
-    "coverage": "AUTOREVIEW_E2E=1 node --test --test-concurrency=1 --experimental-test-coverage --test-coverage-include='scripts/**' --test-coverage-exclude='scripts/lib/providers/anthropic.mjs' --test-coverage-exclude='scripts/lib/providers/openai.mjs' --test-coverage-exclude='scripts/lib/providers/google.mjs' --test-coverage-exclude='scripts/lib/providers/openai-compat.mjs' --test-coverage-exclude='scripts/lib/providers/codex.mjs' --test-coverage-exclude='scripts/lib/providers/gemini-cli.mjs' --test-coverage-exclude='examples/**' --test-coverage-exclude='tests/**' --test-coverage-lines=90 --test-coverage-branches=90 --test-coverage-functions=90 'tests/**/*.test.mjs'"
+    "test": "node --test --test-reporter=spec 'tests/lib/**/*.test.mjs' 'tests/bin/**/*.test.mjs' 'tests/plugin/**/*.test.mjs' 'tests/api/**/*.test.mjs'",
+    "test:e2e": "AUTOREVIEW_E2E=1 node --env-file-if-exists=.env --test --test-concurrency=1 --test-reporter=spec 'tests/e2e/cli-*.test.mjs' 'tests/e2e/smoke.test.mjs'",
+    "test:ollama": "AUTOREVIEW_REAL_OLLAMA=1 node --test --test-reporter=spec tests/e2e/real-ollama.test.mjs",
+    "test:all": "npm test && npm run test:e2e",
+    "coverage": "AUTOREVIEW_E2E=1 node --env-file-if-exists=.env --test --test-concurrency=1 --experimental-test-coverage --test-coverage-include='scripts/**' --test-coverage-exclude='scripts/lib/providers/anthropic.mjs' --test-coverage-exclude='scripts/lib/providers/openai.mjs' --test-coverage-exclude='scripts/lib/providers/google.mjs' --test-coverage-exclude='scripts/lib/providers/openai-compat.mjs' --test-coverage-exclude='scripts/lib/providers/codex.mjs' --test-coverage-exclude='scripts/lib/providers/gemini-cli.mjs' --test-coverage-exclude='examples/**' --test-coverage-exclude='tests/**' --test-coverage-lines=90 --test-coverage-branches=90 --test-coverage-functions=90 'tests/**/*.test.mjs'"
   }
 }

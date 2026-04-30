@@ -57,3 +57,67 @@ test('unknown provider error lists known values', () => {
     /unknown provider: nope\. Known: ollama/,
   );
 });
+
+test('getProvider returns wrapped provider whose verify() is a function', async () => {
+  clearProviderCache();
+  const cfg = {
+    ...DEFAULT_CONFIG,
+    provider: { ...DEFAULT_CONFIG.provider, ollama: { ...DEFAULT_CONFIG.provider.ollama, parallel: 2 } },
+  };
+  const p = getProvider(cfg, {});
+  assert.equal(p.name, 'ollama');
+  assert.equal(typeof p.verify, 'function');
+});
+
+test('same provider name across cache entries shares one Semaphore (via _SEMAPHORES export)', async () => {
+  const { _SEMAPHORES } = await import('../../scripts/lib/provider-client.mjs');
+  clearProviderCache();
+  const cfg = {
+    ...DEFAULT_CONFIG,
+    provider: { ...DEFAULT_CONFIG.provider, anthropic: { ...DEFAULT_CONFIG.provider.anthropic, parallel: 7 } },
+    secrets: { anthropic: { api_key: 'k' } },
+  };
+  getProvider(cfg, { ruleProvider: 'anthropic', ruleModel: 'm-A' });
+  getProvider(cfg, { ruleProvider: 'anthropic', ruleModel: 'm-B' });
+  assert.equal(_SEMAPHORES.size, 1);
+  assert.equal(_SEMAPHORES.get('anthropic').max, 7);
+});
+
+test('different provider names create independent Semaphores (via _SEMAPHORES export)', async () => {
+  const { _SEMAPHORES } = await import('../../scripts/lib/provider-client.mjs');
+  clearProviderCache();
+  const cfg = {
+    ...DEFAULT_CONFIG,
+    provider: {
+      ...DEFAULT_CONFIG.provider,
+      anthropic: { ...DEFAULT_CONFIG.provider.anthropic, parallel: 2 },
+      openai: { ...DEFAULT_CONFIG.provider.openai, parallel: 4 },
+    },
+    secrets: { anthropic: { api_key: 'k' }, openai: { api_key: 'k' } },
+  };
+  getProvider(cfg, { ruleProvider: 'anthropic' });
+  getProvider(cfg, { ruleProvider: 'openai' });
+  assert.equal(_SEMAPHORES.size, 2);
+  assert.equal(_SEMAPHORES.get('anthropic').max, 2);
+  assert.equal(_SEMAPHORES.get('openai').max, 4);
+});
+
+test('clearProviderCache resets _SEMAPHORES too', async () => {
+  const { _SEMAPHORES } = await import('../../scripts/lib/provider-client.mjs');
+  clearProviderCache();
+  const cfg = { ...DEFAULT_CONFIG, secrets: { anthropic: { api_key: 'k' } } };
+  getProvider(cfg, { ruleProvider: 'anthropic' });
+  assert.equal(_SEMAPHORES.size, 1);
+  clearProviderCache();
+  assert.equal(_SEMAPHORES.size, 0);
+});
+
+test('getProvider reads parallel from cfg.provider[name].parallel; defaults to 1 when absent', async () => {
+  clearProviderCache();
+  const cfg = {
+    ...DEFAULT_CONFIG,
+    provider: { ...DEFAULT_CONFIG.provider, ollama: { endpoint: 'http://localhost:11434', model: 'm' } },
+  };
+  const p = getProvider(cfg, {});
+  assert.equal(p.name, 'ollama');
+});

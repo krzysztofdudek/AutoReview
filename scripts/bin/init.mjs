@@ -164,7 +164,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     if (example) await writeAtomic(join(autoreview, 'rules/example.md'), example);
   }
 
-  stdout.write(`\n.autoreview/ initialized with provider=${chosen}.\nNext: /autoreview:create-rule or /autoreview:validate\n`);
+  stdout.write(`\n.autoreview/ initialized with provider=${chosen}.\nNext: /autoreview:create-rule (author your first rule) or /autoreview:review (run the reviewer)\n`);
 
   // UX: after writing config, check if ollama model is actually pulled.
   if (chosen === 'ollama') {

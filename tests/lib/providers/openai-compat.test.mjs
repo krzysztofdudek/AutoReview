@@ -42,3 +42,42 @@ test('openai-compat forwards request to <endpoint>/chat/completions with reasoni
     assert.equal(v.reason, undefined);
   } finally { await close(); }
 });
+
+test('openai-compat: 429 retry [warn] log labelled "openai-compat:" not "openai:"', async () => {
+  const origWrite = process.stderr.write;
+  const lines = [];
+  process.stderr.write = (s) => { lines.push(String(s)); return true; };
+  let calls = 0;
+  const { port, close } = await spin({
+    '/chat/completions': (req, res) => {
+      calls++;
+      if (calls === 1) { res.writeHead(429, { 'retry-after': '0' }); res.end(); return; }
+      res.writeHead(200);
+      res.end(JSON.stringify({ choices: [{ message: { content: '{"satisfied":true}' } }] }));
+    },
+  });
+  try {
+    const p = create({ model: 'llama3', apiKey: 'k', endpoint: `http://127.0.0.1:${port}` });
+    await p.verify('p', { maxTokens: 100 });
+    assert.ok(lines.some(l => /\[warn\] openai-compat: 429/.test(l)),
+      `expected [warn] openai-compat: 429 line, got: ${lines.join(' | ')}`);
+    assert.ok(!lines.some(l => /\[warn\] openai: /.test(l)),
+      `must NOT log under "openai:" — got: ${lines.join(' | ')}`);
+  } finally {
+    process.stderr.write = origWrite;
+    await close();
+  }
+});
+
+test('openai-compat: 4xx error message starts with "openai-compat status:" not "openai status:"', async () => {
+  const { port, close } = await spin({
+    '/chat/completions': (req, res) => { res.writeHead(401); res.end('nope'); },
+  });
+  try {
+    const p = create({ model: 'm', apiKey: 'bad', endpoint: `http://127.0.0.1:${port}` });
+    const v = await p.verify('p', { maxTokens: 10 });
+    assert.equal(v.providerError, true);
+    assert.match(String(v.raw), /openai-compat status:401/);
+    assert.doesNotMatch(String(v.raw), /^Error: openai status:/);
+  } finally { await close(); }
+});

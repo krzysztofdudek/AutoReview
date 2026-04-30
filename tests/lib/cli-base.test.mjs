@@ -2,29 +2,33 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execPath } from 'node:process';
 import { runCli, whichBinary } from '../../scripts/lib/cli-base.mjs';
 
 const fixDir = join(fileURLToPath(new URL('.', import.meta.url)), 'fixtures/fake-cli');
+// Use node + a .mjs fixture for portable spawn — `.sh` shebangs are not honored
+// by spawn() on Windows (EFTYPE). Tests spawn `node <fixture.mjs>` cross-platform.
+const fix = (name) => ({ binary: execPath, args: [join(fixDir, name)] });
 
 test('runCli captures stdout + exit 0', async () => {
-  const r = await runCli({ binary: join(fixDir, 'ok.sh'), args: [], stdin: null });
+  const r = await runCli({ ...fix('ok.mjs'), stdin: null });
   assert.equal(r.exitCode, 0);
   assert.match(r.stdout, /satisfied/);
 });
 
 test('runCli passes stdin and captures echo', async () => {
-  const r = await runCli({ binary: join(fixDir, 'echo-stdin.sh'), args: [], stdin: 'hello world' });
+  const r = await runCli({ ...fix('echo-stdin.mjs'), stdin: 'hello world' });
   assert.equal(r.stdout, 'hello world');
 });
 
 test('runCli surfaces non-zero exit and stderr', async () => {
-  const r = await runCli({ binary: join(fixDir, 'err.sh'), args: [], stdin: null });
+  const r = await runCli({ ...fix('err.mjs'), stdin: null });
   assert.equal(r.exitCode, 1);
   assert.match(r.stderr, /boom/);
 });
 
 test('runCli timeout returns timedOut: true', async () => {
-  const r = await runCli({ binary: join(fixDir, 'timeout.sh'), args: [], stdin: null, timeoutMs: 200 });
+  const r = await runCli({ ...fix('timeout.mjs'), stdin: null, timeoutMs: 200 });
   assert.equal(r.timedOut, true);
 });
 
@@ -45,11 +49,11 @@ test('whichBinary resists shell injection in name', async () => {
 });
 
 test('runCli tolerates EPIPE when child closes stdin before parent write completes', async () => {
-  // ok.sh does not read stdin and exits instantly — on fast kernels (CI Ubuntu)
+  // ok.mjs does not read stdin and exits instantly — on fast kernels (CI Ubuntu)
   // the child closes its stdin pipe before our write flushes, triggering EPIPE
   // as an uncaught exception. The runner must swallow that and return the
   // captured stdout/exit normally.
-  const r = await runCli({ binary: join(fixDir, 'ok.sh'), args: [], stdin: 'payload that cannot land' });
+  const r = await runCli({ ...fix('ok.mjs'), stdin: 'payload that cannot land' });
   assert.equal(r.exitCode, 0);
   assert.match(r.stdout, /satisfied/);
 });

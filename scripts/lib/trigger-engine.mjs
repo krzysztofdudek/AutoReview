@@ -1,8 +1,10 @@
 // scripts/lib/trigger-engine.mjs
-// Trigger expression parser + evaluator. Zero deps.
+// Trigger expression parser + evaluator.
 // Grammar (design §3): EXPR = OR; OR = AND ('OR' AND)*; AND = UNARY ('AND' UNARY)*;
 // UNARY = 'NOT' UNARY | ATOM; ATOM = '(' EXPR ')' | PREDICATE;
 // PREDICATE = ('path'|'content') ':' STRING. Operators case-insensitive outside quotes.
+
+import { sep } from 'node:path';
 
 export class TriggerParseError extends Error {
   constructor(message, position) { super(message); this.position = position; }
@@ -141,14 +143,18 @@ export function matchPath(glob, path) {
 
 export function evaluate(ast, ctx) {
   switch (ast.type) {
-    case 'pred':
+    case 'pred': {
+      // Normalize platform path separators so directory-anchored globs work
+      // cross-platform. On POSIX `sep === '/'` so this is a no-op; on Windows
+      // it converts `\` to `/`. Same idiom is used by gitignoreMatch() above.
+      const normPath = ctx.path == null ? '' : String(ctx.path).split(sep).join('/');
       if (ast.kind === 'path') {
         if (!ast._pathRx) ast._pathRx = compilePathMatcher(ast.value);
-        return ast._pathRx(ctx.path);
+        return ast._pathRx(normPath);
       }
       if (ast.kind === 'dir') {
         if (!ast._dirRx) ast._dirRx = compilePathMatcher(`${ast.value.replace(/\/$/, '')}/**`);
-        return ast._dirRx(ctx.path);
+        return ast._dirRx(normPath);
       }
       if (ast.kind === 'content') {
         if (ctx.binary) return false;
@@ -156,6 +162,7 @@ export function evaluate(ast, ctx) {
         return ast._contentRx.test(ctx.content);
       }
       return false;
+    }
     case 'not': return !evaluate(ast.child, ctx);
     case 'and': return ast.children.every(c => evaluate(c, ctx));
     case 'or': return ast.children.some(c => evaluate(c, ctx));

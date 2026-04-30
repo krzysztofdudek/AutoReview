@@ -56,3 +56,65 @@ test('anthropic thinking mode when reasoningEffort set', async () => {
 test('anthropic isAvailable false without key', async () => {
   assert.equal(await create({ model: 'x', apiKey: '' }).isAvailable(), false);
 });
+
+test('anthropic: 429 with Retry-After triggers retry; succeeds on second attempt', async () => {
+  let calls = 0;
+  const { port, close } = await spin({
+    '/v1/messages': (req, res, body) => {
+      calls++;
+      if (calls === 1) {
+        res.writeHead(429, { 'retry-after': '0' });
+        res.end('rate limited');
+        return;
+      }
+      res.writeHead(200);
+      res.end(JSON.stringify({ content: [{ text: '{"satisfied":true,"reason":"ok"}' }] }));
+    },
+  });
+  try {
+    const p = create({ model: 'claude-haiku-4-5', apiKey: 'sk-test', url: `http://127.0.0.1:${port}/v1/messages` });
+    const v = await p.verify('p', { maxTokens: 100 });
+    assert.equal(v.satisfied, true);
+    assert.equal(calls, 2);
+  } finally { await close(); }
+});
+
+test('anthropic: 4xx non-retryable returns providerError without retry', async () => {
+  let calls = 0;
+  const { port, close } = await spin({
+    '/v1/messages': (req, res) => {
+      calls++;
+      res.writeHead(401);
+      res.end('unauthorized');
+    },
+  });
+  try {
+    const p = create({ model: 'claude-haiku-4-5', apiKey: 'bad', url: `http://127.0.0.1:${port}/v1/messages` });
+    const v = await p.verify('p', { maxTokens: 100 });
+    assert.equal(v.providerError, true);
+    assert.equal(calls, 1);
+  } finally { await close(); }
+});
+
+test('anthropic: 429 emits [warn] retry log via onRetry → process.stderr', async () => {
+  const origWrite = process.stderr.write;
+  const lines = [];
+  process.stderr.write = (s) => { lines.push(String(s)); return true; };
+  let calls = 0;
+  const { port, close } = await spin({
+    '/v1/messages': (req, res) => {
+      calls++;
+      if (calls === 1) { res.writeHead(429, { 'retry-after': '0' }); res.end(); return; }
+      res.writeHead(200); res.end(JSON.stringify({ content: [{ text: '{"satisfied":true}' }] }));
+    },
+  });
+  try {
+    const p = create({ model: 'claude-haiku-4-5', apiKey: 'sk-test', url: `http://127.0.0.1:${port}/v1/messages` });
+    await p.verify('p', { maxTokens: 100 });
+    assert.ok(lines.some(l => /\[warn\] anthropic.*429/.test(l)),
+      `expected a [warn] anthropic 429 line, got: ${lines.join(' | ')}`);
+  } finally {
+    process.stderr.write = origWrite;
+    await close();
+  }
+});

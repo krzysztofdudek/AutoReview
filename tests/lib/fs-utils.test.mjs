@@ -2,9 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, isAbsolute, sep } from 'node:path';
 import { readFileOrNull, writeAtomic, isBinary, walk, readGitignore, pluginRoot, sizeOf } from '../../scripts/lib/fs-utils.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
+
+// Normalise path strings to forward slashes for cross-platform string assertions.
+const posix = (p) => p.split(sep).join('/');
 
 test('readFileOrNull returns null for missing path', async () => {
   assert.equal(await readFileOrNull('/no/such/path/xyz'), null);
@@ -55,7 +58,8 @@ test('walk yields src files, skips node_modules + dist', async () => {
   try {
     const paths = [];
     for await (const p of walk({ root: dir, skipDirs: ['node_modules', '.git'] })) {
-      paths.push(p.replace(dir, ''));
+      // Normalise to POSIX so the string assertions below work on Windows too.
+      paths.push(posix(p.replace(dir, '')));
     }
     assert.ok(paths.includes('/src/a.ts'));
     assert.ok(paths.includes('/src/b.ts'));
@@ -75,7 +79,7 @@ test('gitignore unanchored pattern matches any path segment', async () => {
     await writeFile(join(dir, 'keep.ts'), 'z');
     await writeFile(join(dir, '.gitignore'), '*.log\n');
     const paths = [];
-    for await (const p of walk({ root: dir })) paths.push(p.replace(dir, ''));
+    for await (const p of walk({ root: dir })) paths.push(posix(p.replace(dir, '')));
     assert.ok(paths.includes('/keep.ts'));
     assert.ok(!paths.some(p => p.endsWith('.log')));
   } finally { await rm(dir, { recursive: true, force: true }); }
@@ -103,10 +107,11 @@ test('pluginRoot honors CLAUDE_PLUGIN_ROOT env var', () => {
 test('pluginRoot falls back to three dirs up from caller', () => {
   // Caller is tests/lib/fs-utils.test.mjs. Three dirs up == worktree root.
   const r = pluginRoot(import.meta.url, {});
-  // Must be a non-empty absolute path AND must not include `tests/lib`
-  assert.ok(r.startsWith('/'));
-  assert.ok(!r.includes('tests/lib'));
-  assert.ok(!r.includes('scripts'));
+  // Must be a non-empty absolute path AND must not include `tests/lib`.
+  // Use platform-aware checks so Windows backslash paths pass too.
+  assert.ok(isAbsolute(r));
+  assert.ok(!posix(r).includes('tests/lib'));
+  assert.ok(!posix(r).includes('scripts'));
 });
 
 test('sizeOf returns byte size for existing file', async () => {

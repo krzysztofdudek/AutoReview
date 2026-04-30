@@ -1,7 +1,7 @@
 version: "0.1"
 
 provider:
-  active: openai-compat
+  active: ollama
   ollama:        { endpoint: "http://localhost:11434", model: "gemma4:e4b" }
   claude-code:   { model: haiku }
   codex:         { model: "gpt-5" }
@@ -9,7 +9,7 @@ provider:
   anthropic:     { model: "claude-haiku-4-5" }
   openai:        { model: "gpt-4o-mini" }
   google:        { model: "gemini-2.5-flash" }
-  openai-compat: { endpoint: "http://127.0.0.1:8080/v1", model: "unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit" }
+  openai-compat: { endpoint: "http://127.0.0.1:8080/v1", model: "local-model" }
 
 review:
   evaluate: diff

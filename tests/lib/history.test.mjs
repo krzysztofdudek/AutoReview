@@ -143,3 +143,30 @@ test('createHistorySession keeps one stream open per day', async () => {
     assert.equal(JSON.parse(lines[1]).file, 'b.ts');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('createHistorySession: 50 concurrent appends produce 50 well-formed JSONL lines', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-hist-conc-'));
+  try {
+    const s = createHistorySession(dir);
+    const records = Array.from({ length: 50 }, (_, i) => ({
+      type: 'verdict',
+      file: `f${i}.ts`,
+      rule: `r${i % 5}`,
+      verdict: i % 3 === 0 ? 'pass' : i % 3 === 1 ? 'fail' : 'error',
+      reason: `reason for ${i} ${'x'.repeat(50)}`,
+      ts: '2026-04-30T12:00:00Z',
+      provider: 'stub', model: 'm', mode: 'quick', duration_ms: i,
+    }));
+    await Promise.all(records.map(r => s.append(r)));
+    await s.close();
+    const body = await readFile(join(dir, '.autoreview/.history/2026-04-30.jsonl'), 'utf8');
+    const lines = body.trim().split('\n');
+    assert.equal(lines.length, 50);
+    for (const line of lines) {
+      const parsed = JSON.parse(line);
+      assert.ok(parsed.file);
+      assert.ok(parsed.rule);
+      assert.ok(parsed.verdict);
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

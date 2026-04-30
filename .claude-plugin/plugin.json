@@ -1,6 +1,6 @@
 {
   "name": "autoreview",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Per-file architecture gates for your coding agent. Markdown rules verified on every commit. Ollama-first, offline, zero npm deps.",
   "author": {
     "name": "Krzysztof Dudek",

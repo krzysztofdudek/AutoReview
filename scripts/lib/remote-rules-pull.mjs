@@ -9,7 +9,12 @@ import { readFileOrNull } from './fs-utils.mjs';
 
 const SENTINEL = '.autoreview-managed';
 
-const URL_RE = /^(?:https?:\/\/|git@[A-Za-z0-9._-]+:|ssh:\/\/|git:\/\/|file:\/\/|\/)[A-Za-z0-9@._\-:/_]+(?:\.git)?$/;
+// Accepted prefixes:
+//   https://, http://, git@host:, ssh://, git://, file://, /<posix-abs>, <Drive>:[\\/] (Windows-abs)
+// Body allows alphanumerics, `@._-:` and both path separators. Backslash inclusion is safe because
+// git is invoked via `spawn(['git', 'clone', '--', url, ...])` with no shell — backslashes never reach
+// a shell interpreter.
+const URL_RE = /^(?:https?:\/\/|git@[A-Za-z0-9._-]+:|ssh:\/\/|git:\/\/|file:\/\/|\/|[A-Za-z]:[\\/])[A-Za-z0-9@._\-:/_\\]+(?:\.git)?$/;
 
 function validateRemoteUrl(url) {
   if (typeof url !== 'string' || url.length === 0) {

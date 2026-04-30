@@ -18,7 +18,7 @@ test('exits 0 with actionable init hint when no .autoreview', async () => {
     assert.equal(code, 0);
     // Hint now goes to stdout so the agent sees it in its context and can relay to the user.
     assert.match(c.out(), /\[autoreview\].*\.autoreview.*does not exist/);
-    assert.match(c.out(), /\/autoreview:init/);
+    assert.match(c.out(), /\/autoreview:setup/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

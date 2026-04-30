@@ -37,7 +37,7 @@ test('S2 + no .autoreview -> exit 0 with actionable init hint on stdout', async 
     assert.equal(r.code, 0);
     // Hint goes to stdout (agent context) so Claude can relay it to the user.
     assert.match(r.stdout, /\[autoreview\].*does not exist/);
-    assert.match(r.stdout, /\/autoreview:init/);
+    assert.match(r.stdout, /\/autoreview:setup/);
   } finally { await env.cleanup(); }
 });
 

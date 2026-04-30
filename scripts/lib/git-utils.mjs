@@ -60,8 +60,17 @@ export async function diffUncommitted(cwd, path) {
 }
 
 export async function commitFiles(cwd, sha) {
-  const out = await execGit(cwd, ['show', '--name-only', '--pretty=', sha]);
-  return out.split('\n').filter(Boolean);
+  // --name-status returns "<status>\t<path>" (or "R<score>\t<old>\t<new>" for rename/copy).
+  // Skip deletions — fileAtCommit on a deleted path explodes with "fatal: path ... does not exist in <sha>".
+  const out = await execGit(cwd, ['show', '--name-status', '--pretty=', sha]);
+  const paths = [];
+  for (const line of out.split('\n').filter(Boolean)) {
+    const cols = line.split('\t');
+    const status = cols[0];
+    if (status === 'D') continue;
+    paths.push(status.startsWith('R') || status.startsWith('C') ? cols[2] : cols[1]);
+  }
+  return paths;
 }
 
 export async function fileAtCommit(cwd, sha, path) {

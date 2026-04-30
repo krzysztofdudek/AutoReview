@@ -1,17 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { makeRepo } from './git-helpers.mjs';
 import { repoRoot, stagedPaths, diffStaged, actorContext, gitUserEmail, _resetActorCache } from '../../scripts/lib/git-utils.mjs';
+
+// Compare paths regardless of platform separator. Git outputs forward-slash paths
+// on Windows; mkdtemp uses backslash. Normalise both before equality checks.
+const posix = (p) => p.split(sep).join('/');
 
 test('repoRoot returns absolute path', async () => {
   const { dir, cleanup } = await makeRepo();
   try {
     // macOS mkdtemp may return `/var/folders/...` that resolves to `/private/var/folders/...` via git.
-    // Accept either.
+    // Accept either form, and accept either path separator (Windows vs POSIX).
     const root = await repoRoot(dir);
-    assert.ok(root === dir || root === `/private${dir}`);
+    const rootP = posix(root);
+    const dirP = posix(dir);
+    assert.ok(rootP === dirP || rootP === `/private${dirP}`);
   } finally { await cleanup(); }
 });
 
@@ -47,6 +53,22 @@ test('commitFiles + fileAtCommit reproduce committed content', async () => {
     const files = await commitFiles(dir, 'HEAD');
     assert.deepEqual(files, ['a.ts']);
     assert.equal((await fileAtCommit(dir, 'HEAD', 'a.ts')).trim(), 'v1');
+  } finally { await cleanup(); }
+});
+
+test('commitFiles excludes deleted paths', async () => {
+  const { rm } = await import('node:fs/promises');
+  const { dir, run, cleanup } = await makeRepo();
+  try {
+    await writeFile(join(dir, 'gone.ts'), 'will-die');
+    run('add', 'gone.ts');
+    run('commit', '-m', 'add gone', '-q');
+    await rm(join(dir, 'gone.ts'));
+    await writeFile(join(dir, 'kept.ts'), 'survives');
+    run('add', '-A');
+    run('commit', '-m', 'rm gone, add kept', '-q');
+    const files = await commitFiles(dir, 'HEAD');
+    assert.deepEqual(files, ['kept.ts'], 'deleted paths must not appear — fileAtCommit would fail on them');
   } finally { await cleanup(); }
 });
 

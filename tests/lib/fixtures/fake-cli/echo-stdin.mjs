@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+process.stdin.on('data', d => process.stdout.write(d));
+process.stdin.on('end', () => process.exit(0));

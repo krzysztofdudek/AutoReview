@@ -6,15 +6,15 @@ Notes for agents working on **this repo** (the AutoReview plugin itself — not 
 
 AutoReview is a Claude Code plugin that enforces per-file architecture rules via markdown files + an LLM reviewer, hooked into `git commit`. It ships as:
 
-- A Claude Code plugin (`.claude-plugin/plugin.json`, `hooks/`, `commands/`, `skills/`).
+- A Claude Code plugin (`.claude-plugin/plugin.json`, `hooks/`, `skills/`). The plugin is **agent-first** — there are no `commands/`. Every entry point is a skill with a rich `description: Use when…` so the agent picks it from user intent.
 - A zero-dep Node ≥22 CLI under `scripts/bin/` + library under `scripts/lib/`.
-- Templates (`templates/`) copied into user repos by `/autoreview:init`.
+- Templates (`templates/`) copied into user repos by the `autoreview:setup` skill (which runs `init.mjs` underneath).
 
-Target user installs the plugin, runs `/autoreview:init` in their repo, and gets a pre-commit hook that validates staged files against rules in `.autoreview/rules/`.
+Target user installs the plugin, asks the agent to set AutoReview up (or types `/autoreview:setup`), and gets a pre-commit hook that validates staged files against rules in `.autoreview/rules/`.
 
 ## Critical architectural detail: the "runtime" copy
 
-`/autoreview:init` copies `scripts/lib/` + `scripts/bin/validate.mjs` into `<userrepo>/.autoreview/runtime/`. **This is deliberate** — the pre-commit hook runs outside Claude Code (plain `git commit`, CI runners) with no `CLAUDE_PLUGIN_ROOT` to locate the plugin. The bundled runtime makes repos self-contained and reproducible across machines.
+The `autoreview:setup` skill (via `init.mjs`) copies `scripts/lib/` + `scripts/bin/validate.mjs` into `<userrepo>/.autoreview/runtime/`. **This is deliberate** — the pre-commit hook runs outside Claude Code (plain `git commit`, CI runners) with no `CLAUDE_PLUGIN_ROOT` to locate the plugin. The bundled runtime makes repos self-contained and reproducible across machines.
 
 Version handshake: `.autoreview/runtime/.version` holds the plugin version that last copied the runtime. SessionStart hook (`scripts/bin/session-start.mjs` → `scripts/lib/runtime-sync.mjs`) compares it against the installed plugin manifest and re-copies on mismatch. Don't bypass this — changes to `scripts/lib/` or `scripts/bin/validate.mjs` only reach end users through `syncRuntime`.
 
@@ -24,18 +24,21 @@ Version handshake: `.autoreview/runtime/.version` holds the plugin version that 
 - `scripts/lib/*.mjs` — pure modules, zero deps, reused by CLIs and tests.
 - `scripts/lib/providers/*.mjs` — LLM provider adapters (Ollama, Anthropic, OpenAI, Google, OpenAI-compat, Claude Code, Codex, Gemini CLI). Each implements `{ name, model, verify(prompt, opts), isAvailable(), contextWindowBytes() }`.
 - `hooks/session-start.sh` → `scripts/bin/session-start.mjs` — runs on Claude Code SessionStart.
-- `commands/*.md` — slash command definitions. `skills/*/SKILL.md` — skill definitions.
+- `skills/<name>/SKILL.md` — agent-facing skill definitions (8 skills: setup, create-rule, context, guide, precheck, review, history, pull-remote). No `commands/` — skills are the only Claude Code surface.
 - `templates/` — files copied into user repos.
 - `tests/lib/`, `tests/bin/`, `tests/e2e/`, `tests/api/`, `tests/plugin/` — node:test, no frameworks.
 
 ## Commands
 
 ```
-npm test              # all non-e2e tests
-npm run test:lib      # just lib tests (fastest loop)
-npm run test:e2e      # e2e (forks real CLIs, sequential)
+npm test              # unit (lib + bin + plugin + api), fast, no LLM
+npm run test:e2e      # e2e — forks real CLIs against an OpenAI-compat server
+npm run test:ollama   # one round-trip against a real local Ollama daemon
+npm run test:all      # unit + e2e, single command
 npm run coverage      # 90% lines/branches/functions gate
 ```
+
+E2E config: copy `.env.example` to `.env` (gitignored) and set `AUTOREVIEW_E2E_ENDPOINT` / `AUTOREVIEW_E2E_MODEL` for your local LLM. Each e2e test guards itself with `serverAvailable()` and skips when the endpoint is unreachable, so failures here mean a real test failure, not a missing server.
 
 Every feature lands with tests. There's no linter/formatter — the style is whatever's already in the file.
 
@@ -47,7 +50,7 @@ Every feature lands with tests. There's no linter/formatter — the style is wha
 4. **Never edit the user's root `.gitignore`.** The plugin writes `.autoreview/.gitignore` instead. Any code path that touches files in user repos must respect that boundary.
 5. **Scripts in `scripts/bin/`** must be Windows-safe (use `isMainModule(import.meta.url)` from `fs-utils.mjs`, never `import.meta.url === \`file://${process.argv[1]}\``).
 6. **Pre-commit hooks must never hard-block on provider errors.** `[error]` verdicts from unreachable LLMs are printed but must not cause exit 1. Only `[reject]` (rule-satisfied=false) blocks.
-7. **`validate.mjs` runs both under `/autoreview:validate` (Claude Code) and as a frozen runtime copy.** Any breaking change to its interface is a coordinated plugin bump — users stay on the old behavior until SessionStart auto-upgrades their runtime.
+7. **`validate.mjs` runs both under the `autoreview:review` skill (Claude Code agentic) and as a frozen runtime copy invoked by the pre-commit hook.** Any breaking change to its interface is a coordinated plugin bump — users stay on the old behavior until SessionStart auto-upgrades their runtime.
 
 ## Version bumps
 

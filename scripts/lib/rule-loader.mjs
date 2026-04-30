@@ -3,7 +3,7 @@
 // Apply disabled + default:disabled filters per config.
 
 import { readFile } from 'node:fs/promises';
-import { relative, join } from 'node:path';
+import { relative, join, sep } from 'node:path';
 import { walk } from './fs-utils.mjs';
 import { parse as parseYaml } from './yaml-min.mjs';
 
@@ -24,7 +24,9 @@ async function loadOne(absPath, idBase, sourceName, source) {
   try { fm = parseYaml(frontmatter); }
   catch (e) { return { error: `frontmatter parse: ${e.message}` }; }
   if (!fm?.name || !fm?.triggers) return { error: 'missing name or triggers' };
-  const relId = idBase.replace(/\.md$/, '');
+  // Normalize platform path separators so rule ids are stable across Windows / POSIX
+  // ("foo/bar", not "foo\\bar"). On POSIX `sep === '/'` so this is a no-op.
+  const relId = idBase.split(sep).join('/').replace(/\.md$/, '');
   const id = sourceName ? `${sourceName}/${relId}` : relId;
   return { rule: { id, source, sourceName, path: absPath, frontmatter: fm, body } };
 }

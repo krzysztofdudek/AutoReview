@@ -20,17 +20,17 @@ Three steps, in order:
 
 1. **Install Ollama** (or skip to step 2 if you're using a paid API). Grab it from https://ollama.ai, then `ollama serve &` in a terminal.
 2. **Install the plugin in Claude Code:** `/plugin install autoreview`. Nothing happens to your repo yet — plugin install alone is inert.
-3. **Scaffold AutoReview in your repo:** `/autoreview:init --provider ollama --install-precommit`. This creates `.autoreview/`, installs the git pre-commit hook, and ships one example rule.
+3. **Scaffold AutoReview in your repo:** `/autoreview:setup` (or just ask the agent to "set up autoreview with ollama and install the pre-commit hook"). The skill probes for Ollama, asks which model to use, and runs `init.mjs` to create `.autoreview/`, install the git pre-commit hook, and ship one example rule.
 
 Three things to know before your first commit:
 
 - **Soft by default.** Pre-commit warns on `[reject]` but still lets the commit through. Flip to blocking by setting `enforcement.precommit: hard` in `.autoreview/config.yaml`.
-- **Nothing runs until step 3.** Only `init` drops the hook and scaffolds config. If you see no verdicts on commit, `init` hasn't run.
+- **Nothing runs until step 3.** Only the setup skill drops the hook and scaffolds config. If you see no verdicts on commit, setup hasn't run.
 - **What leaves your machine.** Ollama keeps everything local. Paid providers (Anthropic/OpenAI/Google/openai-compat) receive the full file content plus the matching rule body on each call. Trigger matching runs locally — files that match no rule never leave the box.
 
 To add your first rule, just tell the agent: `"add a rule that forbids console.log in production code"` — it'll walk you through the 7-step wizard and save the rule at `.autoreview/rules/`.
 
-After init, the agent reads [templates/agent-rules.md](templates/agent-rules.md) (copied into your repo at install time) and uses that as its operating manual for AutoReview commands. You don't need to memorize anything; just talk to the agent.
+After setup, the agent reads [templates/agent-rules.md](templates/agent-rules.md) (copied into your repo at install time) and uses that as its operating manual for AutoReview skills. You don't need to memorize anything; just talk to the agent.
 
 ## The problem
 
@@ -95,7 +95,7 @@ All triggers are evaluated locally (zero LLM cost) before the reviewer runs. Sup
 | `{a,b,c}` | brace expansion inside globs | `path:"src/{api,handlers}/**/*.ts"` |
 | `**` | match zero or more path segments | `path:"src/**/*.ts"` (any depth) |
 
-Use `/autoreview:check-breadth --expr '<your-trigger>'` to see how many files it hits before you save the rule. REDoS-prone regexes (`(a+)+`) are rejected at compile time; oversized binary files are auto-skipped for `content:` predicates.
+The `autoreview:create-rule` wizard runs a breadth check on your draft trigger as step 3 — match count plus the first 10 sample paths, zero LLM cost. REDoS-prone regexes (`(a+)+`) are rejected at compile time; oversized binary files are auto-skipped for `content:` predicates.
 
 ## What happens on commit
 
@@ -122,18 +122,12 @@ Triggers are deterministic. No LLM call for trigger matching. Only files with ma
 
 ```
 /plugin install autoreview
-/autoreview:init --provider ollama --install-precommit
+/autoreview:setup
 ```
 
-First command installs the plugin in Claude Code. Second scaffolds `.autoreview/` in your repo and installs the git pre-commit hook. You have to pass `--install-precommit` explicitly. Nothing runs interactively.
+First command installs the plugin in Claude Code. Second invokes the setup skill — it probes for Ollama, asks the user which model and provider to use, and runs `init.mjs` to scaffold `.autoreview/` and install the git pre-commit hook (with explicit confirmation).
 
-For paid providers:
-
-```
-/autoreview:init --provider anthropic --install-precommit
-```
-
-Then paste your key into `.autoreview/config.secrets.yaml`. That file is gitignored.
+For paid providers, just tell the skill — e.g. "set up autoreview with anthropic". Then paste your key into `.autoreview/config.secrets.yaml`. That file is gitignored.
 
 Write your first rule:
 
@@ -164,11 +158,11 @@ When a rule blocks something that shouldn't be blocked, three options in order o
 
 When a rule is plain wrong, edit it — rules are markdown. `.autoreview/rules/<id>.md` opens in any editor; delete the file to remove the rule; change the body to fix the check; change the `triggers:` line to narrow scope. `/autoreview:create-rule` runs the quality-guarded wizard for new rules, but editing existing ones is a plain file edit.
 
-## validate vs. pre-commit context
+## review vs. pre-commit context
 
 Same engine, different defaults:
 
-| | pre-commit hook | `/autoreview:validate` |
+| | pre-commit hook | `/autoreview:review` |
 |---|---|---|
 | enforcement default | **soft** (warn, commit proceeds) | **hard** (reject exits 1) |
 | scope default | staged files only | uncommitted (staged + modified + untracked) |
@@ -181,30 +175,29 @@ Override any default via flags (`--scope all`, `--mode thinking`, `--context val
 
 The agent can ask "would this pass?" before writing the file to disk. Pass a draft in, get a verdict back, no disk write.
 
-In Claude Code:
-```
-/autoreview:validate --content-file /tmp/draft.ts --target-path src/api/users.ts
-```
+In Claude Code, the `autoreview:precheck` skill wraps this — invoke it with the draft content and target path. The agent uses it to avoid writing code it would have to immediately rewrite after the reviewer rejects.
 
-Or from any shell (after `init` has scaffolded `.autoreview/runtime/`):
+Or from any shell (after setup has scaffolded `.autoreview/runtime/`):
 ```bash
-node .autoreview/runtime/bin/validate.mjs \
-  --content-file /tmp/draft.ts \
-  --target-path src/api/users.ts
+node .autoreview/runtime/bin/reviewer-test.mjs \
+  --rule <rule-id> \
+  --file src/api/users.ts \
+  --content-file <tmpdir>/draft.ts \
+  --mode thinking
 ```
 
-Skill `autoreview-precheck` wraps this for Claude Code. Agent uses it to avoid writing code it would have to immediately rewrite after the reviewer rejects.
+Use `node -e "console.log(require('os').tmpdir())"` to get a writable tmp dir on any platform.
 
 ## On-demand review
 
 ```
-/autoreview:validate              uncommitted files, thinking mode
-/autoreview:validate --scope all  full repo sweep
-/autoreview:validate --sha HEAD~1 re-run the reviewer against a past commit
+/autoreview:review              uncommitted files, thinking mode
+/autoreview:review --scope all  full repo sweep
+/autoreview:review --sha HEAD~1 re-run the reviewer against a past commit
 /autoreview:history --sha HEAD~1  look up a past commit in the log (free — no LLM call)
 ```
 
-`validate --sha` re-runs the reviewer against the commit's tree. `history --sha` queries `.autoreview/.history/*.jsonl` for what the reviewer already decided when that commit was actually reviewed. Prefer history when you just want to know "did my last commit pass?" — no tokens spent.
+`review --sha` re-runs the reviewer against the commit's tree. `history --sha` queries `.autoreview/.history/*.jsonl` for what the reviewer already decided when that commit was actually reviewed. Prefer history when you just want to know "did my last commit pass?" — no tokens spent.
 
 ## Editing rules
 
@@ -217,15 +210,20 @@ Rules are plain Markdown files at `.autoreview/rules/<id>.md`. Open one in your 
 
 No re-init, no rebuild. The next commit picks up the change.
 
-## Other commands
+## Skills (agent-first surface)
 
-- `/autoreview:init` — scaffold `.autoreview/` in a repo.
-- `/autoreview:create-rule` — 7-step guided rule wizard.
-- `/autoreview:context <path>` — list rules matching a path (pre-write).
-- `/autoreview:check-breadth --expr '<expr>'` — test a trigger without the reviewer.
-- `/autoreview:guide <query>` — find rules by free-text intent.
-- `/autoreview:pull-remote [<name>]` — fetch remote rule sources.
-- `/autoreview:history` — query review log (verdict counts, recent records).
+The plugin exposes 8 skills — every skill has a rich `description: Use when…` trigger so the agent picks the right one based on user intent. Users typically don't invoke skills directly; they ask the agent in plain language ("set up autoreview", "what rules apply here?", "did my last commit pass?") and the agent picks the matching skill.
+
+- `autoreview:setup` — scaffold `.autoreview/` in a repo, probe Ollama / models, install pre-commit hook.
+- `autoreview:create-rule` — 7-step guided rule wizard (convention → trigger → breadth check → samples → test-drive → save).
+- `autoreview:context` — list rules matching a path (pre-write, free).
+- `autoreview:guide` — find rules by free-text intent (free).
+- `autoreview:precheck` — verdict on a draft not yet on disk (1 LLM call per rule).
+- `autoreview:review` — run the reviewer on existing files; debug a blocked commit.
+- `autoreview:history` — query the review log (verdict counts, recent records, free).
+- `autoreview:pull-remote` — fetch / refresh remote rule sources.
+
+Each skill body documents its CLI invocation (always `node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/<X>.mjs`) and platform notes. The pre-commit hook calls `validate.mjs` directly — independent of the skill surface.
 
 ## Providers
 
@@ -236,6 +234,30 @@ No re-init, no rebuild. The next commit picks up the change.
 **Agent CLI:** Claude Code, Codex, Gemini CLI. Uses whichever agent binary is on your `$PATH` as the reviewer.
 
 Per-rule override. Cheap model for trivial rules, stronger model for the one that matters.
+
+### Per-provider parallelism
+
+Each provider block accepts an optional `parallel` field (positive integer) that caps concurrent in-flight LLM calls to that provider. Defaults are tuned per provider:
+
+| Provider | Default `parallel` | Why |
+|---|---:|---|
+| `ollama` | 1 | Local GPU/CPU; concurrent calls thrash a single GPU. |
+| `openai-compat` | 5 | Local high-throughput servers (LM Studio, vLLM) handle small concurrency well. |
+| `anthropic` / `openai` / `google` | 10 | Paid HTTP APIs with generous RPM tiers. Free-tier OpenAI users (4 RPM) should drop this to 2–3 manually. |
+| `claude-code` / `codex` / `gemini-cli` | 3 | Each call forks a CLI subprocess; startup overhead caps useful concurrency, especially on Windows. |
+
+Example:
+
+```yaml
+provider:
+  active: anthropic
+  anthropic: { model: "claude-haiku-4-5", parallel: 10 }
+  ollama:    { endpoint: "http://localhost:11434", model: "qwen2.5-coder:7b", parallel: 1 }
+```
+
+The same `parallel` value applies in pre-commit, validate, and any future review context — `parallel` is a property of the provider, not the run.
+
+When a paid provider returns `429` (rate limited) or `408` (request timeout), the call retries with exponential backoff up to 4 attempts, honouring any `Retry-After` header (capped at 30s). Each retry emits one `[warn]` line on stderr.
 
 ## Modes
 
@@ -300,7 +322,7 @@ Rules live in your repo. Personal config lives on your machine. API keys live in
 - Override per-developer in `config.personal.yaml` without touching the team config. Swap reviewer, raise reasoning effort, enable extra rules locally.
 - History log records provider, model, rule, verdict, and reason per review. Audit trail for every run.
 
-**Onboarding a new dev.** After `git clone`, each developer runs `/autoreview:init --upgrade --install-precommit` once. The `--upgrade` is safe on an already-init'd clone; without it, init bails out assuming setup is already done. If the repo already uses Husky or another pre-commit manager, pass `--precommit-append` so AutoReview's hook runs alongside the existing one instead of replacing it.
+**Onboarding a new dev.** After `git clone`, each developer asks the agent to run `autoreview:setup --upgrade --install-precommit` (or types `/autoreview:setup --upgrade --install-precommit`). The `--upgrade` is safe on an already-set-up clone; without it, the underlying init bails out assuming setup is already done. If the repo already uses Husky or another pre-commit manager, pass `--precommit-append` so AutoReview's hook runs alongside the existing one instead of replacing it.
 
 **Centralized audit trail.** The history log (`.autoreview/.history/*.jsonl`) is gitignored by default — it's per-machine. For a team-wide view, upload the jsonl from CI as an artifact or ship it to a log aggregator. Records carry `actor` (git email), `host`, `ci_run_id`, `commit_sha`, and token `usage` so you can aggregate spend and attribute verdicts across machines.
 
@@ -348,11 +370,23 @@ No. AI code review bots scan diffs post-hoc. AutoReview runs a reviewer against 
 ## Testing
 
 ```
-npm test                                     # unit + integration (stubs only)
-AUTOREVIEW_REAL_OLLAMA=1 npm test           # +real Ollama round-trip (requires daemon)
+npm test              # unit (lib + bin + plugin + api), fast, no LLM
+npm run test:e2e      # e2e against an OpenAI-compat server (your local LLM)
+npm run test:ollama   # one round-trip against a real local Ollama daemon
+npm run test:all      # unit + e2e in one command
+npm run coverage      # 90% lines/branches/functions gate
 ```
 
-The real-Ollama test (`tests/e2e/real-ollama.test.mjs`) is skipped by default. Set `AUTOREVIEW_REAL_OLLAMA=1` to run it. Optionally set `OLLAMA_HOST` (default `http://localhost:11434`) and `AUTOREVIEW_REAL_MODEL` (default `qwen2.5-coder:7b`).
+`test:e2e` and `coverage` load `.env` (Node 22 `--env-file-if-exists`). Copy `.env.example` to `.env` and point `AUTOREVIEW_E2E_ENDPOINT` / `AUTOREVIEW_E2E_MODEL` at your local server (defaults target `127.0.0.1:8089`). Each e2e test guards itself with `serverAvailable()` and skips cleanly when the endpoint is unreachable.
+
+`test:ollama` exercises the Ollama connector (`tests/e2e/real-ollama.test.mjs`). It needs the daemon up and a model pulled; a tiny one is enough:
+
+```
+ollama pull qwen2.5-coder:0.5b
+AUTOREVIEW_REAL_MODEL=qwen2.5-coder:0.5b npm run test:ollama
+```
+
+Optional overrides: `OLLAMA_HOST` (default `http://localhost:11434`), `AUTOREVIEW_REAL_MODEL` (default `qwen2.5-coder:7b`).
 
 ## License
 

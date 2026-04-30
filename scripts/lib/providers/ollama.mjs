@@ -1,7 +1,7 @@
 // scripts/lib/providers/ollama.mjs
 // reasoningEffort is ignored — Ollama API has no thinking/effort knob.
 
-import { request, withRetry, retryable } from '../http-client.mjs';
+import { request, withRetry, retryable, parseRetryAfter } from '../http-client.mjs';
 import { parseResponse } from '../response-parser.mjs';
 
 export async function ollamaHasModel(endpoint, model) {
@@ -14,8 +14,16 @@ export async function ollamaHasModel(endpoint, model) {
   } catch { return false; }
 }
 
-export function create({ endpoint, model, _retryOptions } = {}) {
-  const retryOpts = _retryOptions ?? { attempts: 3, initialMs: 500, factor: 2, jitterMs: 200, shouldRetry: retryable };
+export function create({ endpoint, model, timeoutMs = 120_000, _retryOptions } = {}) {
+  // Ollama doesn't return 429 in standard self-hosted form, but a reverse-proxy in front
+  // (nginx + rate-limit module, fronted SaaS Ollama) can — the parity with paid HTTP
+  // adapters keeps backoff behaviour uniform across providers.
+  const retryOpts = _retryOptions ?? {
+    shouldRetry: retryable,
+    onRetry: ({ attempt, attempts, delay, err }) => {
+      process.stderr.write(`[warn] ollama: ${err.status ?? err.code ?? 'transient'} backing off ${delay}ms (attempt ${attempt}/${attempts})\n`);
+    },
+  };
   return {
     name: 'ollama',
     model,
@@ -40,10 +48,13 @@ export function create({ endpoint, model, _retryOptions } = {}) {
                 // 0 = no limit → ollama's -1 means "generate until stop token".
                 options: { num_predict: maxTokens > 0 ? maxTokens : -1, temperature: 0 },
               }),
-              timeoutMs: 120_000,
+              timeoutMs,
             });
-            if (res.status >= 500 && res.status < 600) {
-              const e = new Error(`ollama status:${res.status}`); e.status = res.status; throw e;
+            if (res.status >= 400) {
+              const e = new Error(`ollama status:${res.status}`);
+              e.status = res.status;
+              e.retryAfterMs = parseRetryAfter(res.headers['retry-after']);
+              throw e;
             }
             return res;
           },

@@ -11,7 +11,7 @@ import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchFo
 import { renderRule, saveRule } from '../lib/rule-authoring.mjs';
 import { walk, isBinary, sizeOf, isMainModule } from '../lib/fs-utils.mjs';
 import { reviewFile } from '../lib/reviewer.mjs';
-import { relative, resolve as resolvePath, isAbsolute } from 'node:path';
+import { relative, resolve as resolvePath, isAbsolute, sep } from 'node:path';
 
 function resolveCliPath(cwd, p) {
   return isAbsolute(p) ? p : resolvePath(cwd, p);
@@ -45,7 +45,9 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     catch (e) { stderr.write(`[error] parse: ${e.message}\n`); return 1; }
     const matches = [];
     for await (const abs of walk({ root, cap: cfg.review.walk_file_cap })) {
-      const rel = relative(root, abs);
+      // Normalize to POSIX-style separators so triggers and JSON sample output
+      // are consistent across Windows / POSIX.
+      const rel = relative(root, abs).split(sep).join('/');
       const size = await sizeOf(abs);
       const needsContent = /content:/.test(values.expr);
       let content = '', binary = false;

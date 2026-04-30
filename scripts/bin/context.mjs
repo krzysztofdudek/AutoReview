@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // scripts/bin/context.mjs
 import { readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { repoRoot } from '../lib/git-utils.mjs';
 import { loadConfig, DEFAULT_CONFIG } from '../lib/config-loader.mjs';
 import { loadRules } from '../lib/rule-loader.mjs';
@@ -44,7 +44,11 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   for (const w of warnings) stderr.write(`[warn] ${w}\n`);
 
   const absTarget = resolve(cwd, target);
-  const relTarget = absTarget.startsWith(root + '/') ? absTarget.slice(root.length + 1) : target;
+  // Use the platform separator at the boundary so this works on Windows where
+  // `repoRoot` may return a forward-slash URL-style path while `resolve()` uses `\`.
+  const rootNorm = root.split(/[\\/]/).join(sep);
+  const absNorm = absTarget.split(/[\\/]/).join(sep);
+  const relTarget = absNorm.startsWith(rootNorm + sep) ? absNorm.slice(rootNorm.length + 1) : target;
   const buf = await readFile(absTarget).catch(() => null);
   const content = buf ? buf.toString('utf8') : '';
   const binary = buf ? isBinary(buf) : false;

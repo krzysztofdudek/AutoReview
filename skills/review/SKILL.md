@@ -1,9 +1,11 @@
 ---
-name: autoreview-review
-description: Use when user asks "does this pass review?", "does this file pass our rules", wrapping up feature work before a commit, when a commit got blocked OR rejected by the pre-commit hook (any "[reject]", "commit rejected", "commit being rejected", "why is my commit being rejected", "why is my commit failing", "my commit is being blocked" phrasing), or when debugging a specific rule verdict. Runs the real LLM reviewer. Skip when no `.autoreview/` exists — use autoreview-setup.
+name: review
+description: Use when user asks "does this pass review?", "does this file pass our rules", wrapping up feature work before a commit, when a commit got blocked OR rejected by the pre-commit hook (any "[reject]", "commit rejected", "commit being rejected", "why is my commit being rejected", "why is my commit failing", "my commit is being blocked" phrasing), or when debugging a specific rule verdict. Runs the real LLM reviewer. Skip when no `.autoreview/` exists — use autoreview:setup.
 ---
 
 # AutoReview Review
+
+> **Cross-platform.** Snippets below use bash-style env-var syntax (`${CLAUDE_PLUGIN_ROOT}`). Claude Code's Bash tool runs Git Bash on Windows so these work as-is; on native PowerShell substitute `$env:CLAUDE_PLUGIN_ROOT`, on cmd use `%CLAUDE_PLUGIN_ROOT%`. Plugin requires Node ≥22 — only assumed binary.
 
 ## Context: the pre-commit hook runs this automatically
 
@@ -40,6 +42,8 @@ If user says "my commit got rejected with `[reject] src/api/foo.ts :: api/valida
 
 ## Reporting
 
-Report verdicts to the user: `[pass]` / `[reject]` / `[error]` lines per rule. In thinking mode, reasons include file:line refs.
+Report verdicts to the user verbatim: `[pass]` / `[reject]` / `[error]` / `[suppressed]` lines per `file :: rule` pair. Preserve the prefixes — pre-commit hooks and CI parse them. In thinking mode, rejects include a `reason:` line with file:line refs; in quick mode, a `why:` hint tells the user how to re-run for the reason.
+
+Default scope when no flags are passed: `--scope uncommitted --mode thinking --context validate`. Hard enforcement — the script exits 1 on any reject.
 
 If the tool returns warnings about provider unreachability, mention the warning verbatim — do not attempt to bypass the soft-fail.

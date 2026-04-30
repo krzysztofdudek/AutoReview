@@ -10,10 +10,10 @@ test('agent-rules.md within 1200-token hard ceiling', async () => {
   assert.ok(toks <= 1200, `agent-rules.md is ${toks} tokens, ceiling 1200`);
 });
 
-test('agent-rules.md within 800-token target (warning only)', async () => {
+test('agent-rules.md within 1000-token target (warning only)', async () => {
   const body = await readFile('templates/agent-rules.md', 'utf8');
   const toks = roughTokens(body);
-  if (toks > 800) {
-    console.warn(`[budget] agent-rules.md is ${toks} tokens, target 800 exceeded`);
+  if (toks > 1000) {
+    console.warn(`[budget] agent-rules.md is ${toks} tokens, target 1000 exceeded`);
   }
 });

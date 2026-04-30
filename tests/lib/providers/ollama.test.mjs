@@ -197,3 +197,60 @@ test('ollamaHasModel: false on non-200', async () => {
     assert.equal(await ollamaHasModel(`http://127.0.0.1:${port}`, 'x'), false);
   } finally { await close(); }
 });
+
+test('ollama: 429 with Retry-After triggers retry; succeeds on second attempt', async () => {
+  let calls = 0;
+  const { port, close } = await spin({
+    '/api/generate': (q, r) => {
+      calls++;
+      if (calls === 1) { r.writeHead(429, { 'retry-after': '0' }); r.end('rate limited'); return; }
+      r.writeHead(200);
+      r.end(JSON.stringify({ response: '{"satisfied":true,"reason":"ok"}' }));
+    },
+  });
+  try {
+    const p = create({ endpoint: `http://127.0.0.1:${port}`, model: 'x' });
+    const v = await p.verify('p', { maxTokens: 100 });
+    assert.equal(v.satisfied, true);
+    assert.equal(calls, 2);
+  } finally { await close(); }
+});
+
+test('ollama: emits [warn] onRetry log on 429', async () => {
+  const origWrite = process.stderr.write;
+  const lines = [];
+  process.stderr.write = (s) => { lines.push(String(s)); return true; };
+  let calls = 0;
+  const { port, close } = await spin({
+    '/api/generate': (q, r) => {
+      calls++;
+      if (calls === 1) { r.writeHead(429, { 'retry-after': '0' }); r.end(); return; }
+      r.writeHead(200); r.end(JSON.stringify({ response: '{"satisfied":true}' }));
+    },
+  });
+  try {
+    const p = create({ endpoint: `http://127.0.0.1:${port}`, model: 'x' });
+    await p.verify('p', { maxTokens: 100 });
+    assert.ok(lines.some(l => /\[warn\] ollama: 429/.test(l)),
+      `expected [warn] ollama: 429 line, got: ${lines.join(' | ')}`);
+  } finally {
+    process.stderr.write = origWrite;
+    await close();
+  }
+});
+
+test('ollama: 401 not retried; returns providerError', async () => {
+  let calls = 0;
+  const { port, close } = await spin({
+    '/api/generate': (q, r) => { calls++; r.writeHead(401); r.end('nope'); },
+  });
+  try {
+    const p = create({
+      endpoint: `http://127.0.0.1:${port}`, model: 'x',
+      _retryOptions: { attempts: 4, initialMs: 1, factor: 1, jitterMs: 0, shouldRetry: retryable },
+    });
+    const v = await p.verify('p', { maxTokens: 10 });
+    assert.equal(v.providerError, true);
+    assert.equal(calls, 1, 'must not retry on 401');
+  } finally { await close(); }
+});

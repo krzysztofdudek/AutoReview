@@ -154,3 +154,64 @@ test('config rejects remote_rules url starting with dash', async () => {
     await assert.rejects(() => loadConfig(dir), /url.*'-'/);
   } finally { await cleanup(); }
 });
+
+test('provider.<name>.parallel defaults applied when absent', async () => {
+  const { dir, cleanup } = await fixtureRepo({});
+  try {
+    const cfg = await loadConfig(dir);
+    assert.equal(cfg.provider.ollama.parallel, 1);
+    assert.equal(cfg.provider.anthropic.parallel, 10);
+    assert.equal(cfg.provider.openai.parallel, 10);
+    assert.equal(cfg.provider.google.parallel, 10);
+    assert.equal(cfg.provider['openai-compat'].parallel, 5);
+    assert.equal(cfg.provider['claude-code'].parallel, 3);
+    assert.equal(cfg.provider.codex.parallel, 3);
+    assert.equal(cfg.provider['gemini-cli'].parallel, 3);
+  } finally { await cleanup(); }
+});
+
+test('provider.<name>.parallel: explicit value preserved', async () => {
+  const { dir, cleanup } = await fixtureRepo({
+    'config.yaml': 'provider:\n  ollama:\n    parallel: 4\n',
+  });
+  try {
+    const cfg = await loadConfig(dir);
+    assert.equal(cfg.provider.ollama.parallel, 4);
+  } finally { await cleanup(); }
+});
+
+test('provider.<name>.parallel: 0 throws', async () => {
+  const { dir, cleanup } = await fixtureRepo({
+    'config.yaml': 'provider:\n  ollama:\n    parallel: 0\n',
+  });
+  try {
+    await assert.rejects(() => loadConfig(dir), /parallel.*positive integer/i);
+  } finally { await cleanup(); }
+});
+
+test('provider.<name>.parallel: -1 throws', async () => {
+  const { dir, cleanup } = await fixtureRepo({
+    'config.yaml': 'provider:\n  ollama:\n    parallel: -1\n',
+  });
+  try {
+    await assert.rejects(() => loadConfig(dir), /parallel.*positive integer/i);
+  } finally { await cleanup(); }
+});
+
+test('provider.<name>.parallel: non-integer throws', async () => {
+  const { dir, cleanup } = await fixtureRepo({
+    'config.yaml': 'provider:\n  ollama:\n    parallel: 5.5\n',
+  });
+  try {
+    await assert.rejects(() => loadConfig(dir), /parallel.*positive integer/i);
+  } finally { await cleanup(); }
+});
+
+test('provider.<name>.parallel: string "5" throws (must be integer, not coerced)', async () => {
+  const { dir, cleanup } = await fixtureRepo({
+    'config.yaml': "provider:\n  ollama:\n    parallel: '5'\n",
+  });
+  try {
+    await assert.rejects(() => loadConfig(dir), /parallel.*positive integer/i);
+  } finally { await cleanup(); }
+});

@@ -1,7 +1,10 @@
 # Personal overrides. Gitignored. Override any key from config.yaml.
-# Example: switch to a cloud provider just for your machine.
+# Example: switch to a cloud provider just for your machine, or tune
+# per-provider parallelism (caps concurrent in-flight LLM calls).
 #
 # provider:
 #   active: anthropic
+#   anthropic:
+#     parallel: 4   # free-tier OpenAI users at 4 RPM should drop to 2-3
 # review:
 #   mode: thinking

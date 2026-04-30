@@ -11,9 +11,11 @@ import { createIntentGate } from '../lib/intent-gate.mjs';
 import { reportVerdicts } from '../lib/report.mjs';
 import { createHistorySession } from '../lib/history.mjs';
 import { readFileOrNull, isBinary, isMainModule } from '../lib/fs-utils.mjs';
-import { readFile } from 'node:fs/promises';
+import { readFile, appendFile } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
 import { pullSource } from '../lib/remote-rules-pull.mjs';
+import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchForContent } from '../lib/trigger-engine.mjs';
+import { Semaphore } from '../lib/concurrency.mjs';
 
 function stubProviderByEnv(env) {
   const mode = env.AUTOREVIEW_STUB_PROVIDER;
@@ -25,16 +27,27 @@ function stubProviderByEnv(env) {
     error: { satisfied: false, providerError: true, raw: 'stub' },
   };
   const callLogPath = env.AUTOREVIEW_STUB_CALL_LOG;
+  // Default Semaphore(1) preserves deterministic verdict-line ordering for tests that assert
+  // a specific stderr layout. Benchmarks that need to observe the validate.mjs fan-out
+  // (acceptance §F.3.4) override via AUTOREVIEW_STUB_PARALLEL.
+  const stubParallel = Number.isInteger(Number(env.AUTOREVIEW_STUB_PARALLEL)) && Number(env.AUTOREVIEW_STUB_PARALLEL) > 0
+    ? Number(env.AUTOREVIEW_STUB_PARALLEL)
+    : 1;
+  const stubDelayMs = Number.isFinite(Number(env.AUTOREVIEW_STUB_DELAY_MS)) && Number(env.AUTOREVIEW_STUB_DELAY_MS) > 0
+    ? Number(env.AUTOREVIEW_STUB_DELAY_MS)
+    : 0;
+  const sem = new Semaphore(stubParallel);
   return {
     name: 'stub', model: 'stub',
     async verify(prompt) {
-      if (callLogPath) {
-        // Write one line per call; each line is a JSON record the test can count/inspect.
-        const { appendFile } = await import('node:fs/promises');
-        const line = JSON.stringify({ ts: Date.now(), promptLen: prompt.length, diffPresent: /<diff>\n(?!\(no diff)/.test(prompt) }) + '\n';
-        await appendFile(callLogPath, line);
-      }
-      return map[mode];
+      return sem.run(async () => {
+        if (callLogPath) {
+          const line = JSON.stringify({ ts: Date.now(), promptLen: prompt.length, diffPresent: /<diff>\n(?!\(no diff)/.test(prompt) }) + '\n';
+          await appendFile(callLogPath, line);
+        }
+        if (stubDelayMs > 0) await new Promise(r => setTimeout(r, stubDelayMs));
+        return map[mode];
+      });
     },
     contextWindowBytes: async () => 16384,
   };
@@ -165,30 +178,102 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   let hardFailure = false;
   let rejectCount = 0;
   const reviewState = { ctxCache: new Map(), warnedReasoning: new Set() };
+
+  const fileState = new Map();
   for (const entry of entries) {
     if (entry.binary && filtered.some(r => /content:/.test(r.frontmatter.triggers))) {
       stderr.write(`[warn] ${entry.path}: binary detected, content: predicates will not match\n`);
     }
-    const { verdicts } = await reviewFile({
-      repoRoot: root, config: cfg, rules: filtered,
-      file: { path: entry.path, content: entry.content, binary: entry.binary },
-      diff: entry.diff,
-      intentGate,
-      historyEnabled: cfg.history.log_to_file,
-      historyAppend: historySession ? rec => historySession.append(rec) : null,
-      _providerOverride: stubProvider,
-      _state: reviewState,
-      stderr,
+    const fileSize = Buffer.byteLength(entry.content);
+    const contentForbidden = shouldTreatAsNonMatchForContent(fileSize, entry.binary);
+    const matchedRules = filtered.filter(rule => {
+      if (!rule._triggersAst) rule._triggersAst = parseTrigger(rule.frontmatter.triggers);
+      return evalTrigger(rule._triggersAst, { path: entry.path, content: entry.content, binary: contentForbidden });
     });
-    reportVerdicts(entry, verdicts, cfg.review.mode, stderr, { softContext: enforcement === 'soft' });
-    for (const v of verdicts) {
-      if (v.verdict === 'fail') { hardFailure = true; rejectCount++; }
-      // Spec §22: provider errors (missing key, unreachable daemon) must NOT block.
-      // They already appear as [error] on stderr via reportVerdicts. Never promote to exit 1.
+    fileState.set(entry.path, {
+      entry,
+      pendingPairs: matchedRules.length,
+      verdicts: {},
+      matched: matchedRules.map(r => r.id),
+      totalDuration: 0,
+    });
+  }
+
+  const pairs = [];
+  for (const entry of entries) {
+    const st = fileState.get(entry.path);
+    for (const ruleId of st.matched) {
+      const rule = filtered.find(r => r.id === ruleId);
+      pairs.push({ entry, rule });
     }
   }
 
-  if (historySession) await historySession.close();
+  // Heads-up before a long paid-API run so the user can Ctrl-C early.
+  if (pairs.length * cfg.review.consensus > 100) {
+    stderr.write(`[info] large run: ${pairs.length} (file, rule) pairs × consensus=${cfg.review.consensus} — Ctrl-C now if this is unexpected\n`);
+  }
+
+  // Intent-gate budget race: concurrent intent checks can overshoot the budget under fan-out.
+  // Atomic budget decrement is a follow-up; emit a one-time warning so the user is aware.
+  const activeParallel = cfg.provider[cfg.provider.active]?.parallel ?? 1;
+  if (cfg.review.intent_triggers && activeParallel > 1) {
+    stderr.write(`[warn] intent_triggers is on with parallel=${activeParallel}: budget may be exceeded under concurrent fan-out (atomic budget fix is a follow-up)\n`);
+  }
+
+  // Files matching zero rules still get an empty file-summary (preserves prior behaviour).
+  if (historySession) {
+    for (const [, st] of fileState) {
+      if (st.pendingPairs === 0) {
+        await historySession.append({
+          type: 'file-summary',
+          file: st.entry.path,
+          matched_rules: st.matched,
+          verdicts: st.verdicts,
+          duration_ms: st.totalDuration,
+        });
+      }
+    }
+  }
+
+  try {
+    await Promise.all(pairs.map(async ({ entry, rule }) => {
+      const { verdicts } = await reviewFile({
+        repoRoot: root, config: cfg, rules: [rule],
+        file: { path: entry.path, content: entry.content, binary: entry.binary },
+        diff: entry.diff,
+        intentGate,
+        historyEnabled: cfg.history.log_to_file,
+        historyAppend: historySession ? rec => historySession.append(rec) : null,
+        _providerOverride: stubProvider,
+        _state: reviewState,
+        stderr,
+      });
+      reportVerdicts(entry, verdicts, cfg.review.mode, stderr, { softContext: enforcement === 'soft' });
+      const st = fileState.get(entry.path);
+      for (const v of verdicts) {
+        st.verdicts[v.rule] = v.verdict;
+        st.totalDuration += v.duration_ms;
+        if (v.verdict === 'fail') { hardFailure = true; rejectCount++; }
+        // Spec §22: provider errors (missing key, unreachable daemon) must NOT block.
+        // They already appear as [error] on stderr via reportVerdicts. Never promote to exit 1.
+      }
+      // Decrement once per pair, regardless of verdict count: intent skip-no produces 0 verdicts
+      // but the pair was still consumed. Decrementing by verdicts.length would leave pendingPairs
+      // stuck above 0 and the file-summary would never be emitted.
+      st.pendingPairs -= 1;
+      if (st.pendingPairs === 0 && historySession) {
+        await historySession.append({
+          type: 'file-summary',
+          file: entry.path,
+          matched_rules: st.matched,
+          verdicts: st.verdicts,
+          duration_ms: st.totalDuration,
+        });
+      }
+    }));
+  } finally {
+    if (historySession) await historySession.close();
+  }
 
   // UX: print a debug hint when precommit quick-mode has rejects
   if (context === 'precommit' && cfg.review.mode === 'quick' && hardFailure) {

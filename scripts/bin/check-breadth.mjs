@@ -7,7 +7,7 @@ import { loadRules } from '../lib/rule-loader.mjs';
 import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchForContent } from '../lib/trigger-engine.mjs';
 import { walk, isBinary, sizeOf, isMainModule } from '../lib/fs-utils.mjs';
 import { readFile } from 'node:fs/promises';
-import { relative } from 'node:path';
+import { relative, sep } from 'node:path';
 
 export async function run(argv, ctx) {
   try {
@@ -46,7 +46,9 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
 
   const matches = [];
   for await (const abs of walk({ root, cap: walkCap, onCapReached: (n) => stderr.write(`[warn] reached walk cap (${n} files)\n`) })) {
-    const rel = relative(root, abs);
+    // Normalize to POSIX-style separators so trigger globs and the printed sample
+    // are consistent across Windows / POSIX.
+    const rel = relative(root, abs).split(sep).join('/');
     const size = await sizeOf(abs);
     const needsContent = /content:/.test(expr);
     let content = '';

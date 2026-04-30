@@ -4,7 +4,7 @@ import { getProvider } from './provider-client.mjs';
 import { buildPrompt } from './prompt-builder.mjs';
 import { fitFile } from './chunker.mjs';
 import { voteConsensus } from './consensus.mjs';
-import { appendVerdict, appendFileSummary } from './history.mjs';
+import { appendVerdict } from './history.mjs';
 import { scanSuppressMarkers } from './suppress-parser.mjs';
 
 function resolveMode(config) { return config.review.mode; }
@@ -20,10 +20,15 @@ const REASONING_SUPPORT = new Set(['anthropic', 'openai', 'google', 'openai-comp
 async function resolveContextWindow(config, provider, _state) {
   if (config.review.context_window_bytes !== 'auto') return config.review.context_window_bytes;
   const key = `${provider.name}|${provider.model}`;
-  if (_state.ctxCache.has(key)) return _state.ctxCache.get(key);
-  const bytes = provider.contextWindowBytes ? await provider.contextWindowBytes() : 16384;
-  _state.ctxCache.set(key, bytes);
-  return bytes;
+  // Cache the in-flight promise so concurrent reviewFile() calls under Promise.all share
+  // a single contextWindowBytes() round-trip. Caching only the resolved value would race
+  // between has()/await/set, letting N pairs each call the provider once before any
+  // populated the cache.
+  if (!_state.ctxCache.has(key)) {
+    const promise = provider.contextWindowBytes ? provider.contextWindowBytes() : Promise.resolve(16384);
+    _state.ctxCache.set(key, promise);
+  }
+  return await _state.ctxCache.get(key);
 }
 
 export async function reviewFile(opts) {
@@ -75,6 +80,10 @@ export async function reviewFile(opts) {
       ruleModel: rule.frontmatter.model,
     });
 
+    // Dedupe under concurrent fan-out depends on has()/add() being in one synchronous block
+    // (no await between them) — JS event loop then guarantees one warn per shared _state.
+    // Inserting an await here would let two concurrent reviewFile invocations both pass the
+    // !has() check before either adds, producing duplicate warns.
     if (config.review.reasoning_effort && !REASONING_SUPPORT.has(provider.name) && !_state.warnedReasoning.has(provider.name)) {
       _state.warnedReasoning.add(provider.name);
       warn(`[warn] provider ${provider.name} does not support reasoning_effort; ignoring for this run`);
@@ -150,7 +159,5 @@ export async function reviewFile(opts) {
     verdicts: matchedVerdicts,
     duration_ms: verdicts.reduce((s, v) => s + v.duration_ms, 0),
   };
-  if (historyAppend) await historyAppend({ type: 'file-summary', ...summary });
-  else if (historyEnabled) await appendFileSummary(repoRoot, summary);
   return { verdicts, summary };
 }

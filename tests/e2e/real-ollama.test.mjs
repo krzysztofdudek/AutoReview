@@ -5,10 +5,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { run as validate } from '../../scripts/bin/validate.mjs';
+import { request } from '../../scripts/lib/http-client.mjs';
 
 const ENABLED = process.env.AUTOREVIEW_REAL_OLLAMA === '1';
+const OLLAMA_HOST = process.env.OLLAMA_HOST ?? 'http://localhost:11434';
 
-test('real Ollama round-trip: pass verdict on trivial passing rule', { skip: !ENABLED ? 'set AUTOREVIEW_REAL_OLLAMA=1 to run' : false }, async () => {
+async function ollamaAvailable(timeoutMs = 1500) {
+  try {
+    const r = await request({ url: OLLAMA_HOST.replace(/\/$/, '') + '/api/tags', method: 'GET', timeoutMs });
+    return r.status === 200;
+  } catch { return false; }
+}
+
+test('real Ollama round-trip: pass verdict on trivial passing rule', async (t) => {
+  if (!ENABLED) return t.skip('set AUTOREVIEW_REAL_OLLAMA=1 to run');
+  if (!await ollamaAvailable()) return t.skip(`Ollama daemon ${OLLAMA_HOST} unreachable`);
   const dir = await mkdtemp(join(tmpdir(), 'ar-real-'));
   try {
     spawnSync('git', ['init', '-q'], { cwd: dir });

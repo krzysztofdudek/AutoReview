@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { request, withRetry, retryable } from '../../scripts/lib/http-client.mjs';
+import { request, withRetry, retryable, parseRetryAfter } from '../../scripts/lib/http-client.mjs';
 
 function spin(handler) {
   return new Promise(resolve => {
@@ -126,4 +126,118 @@ test('request with no body (GET, body=null) — no content-length header set', a
     await request({ url: `http://127.0.0.1:${port}/`, method: 'GET' });
     assert.equal(sawCL, undefined);
   } finally { await close(); }
+});
+
+test('retryable: 429 status', () => {
+  assert.equal(retryable({ status: 429 }), true);
+});
+
+test('retryable: 408 status', () => {
+  assert.equal(retryable({ status: 408 }), true);
+});
+
+test('retryable: status:429 in error message', () => {
+  assert.equal(retryable(new Error('openai status:429 too many requests')), true);
+});
+
+test('retryable: status:408 in error message', () => {
+  assert.equal(retryable(new Error('anthropic status:408 timeout')), true);
+});
+
+test('retryable: rejects 401', () => {
+  assert.equal(retryable({ status: 401 }), false);
+});
+
+test('parseRetryAfter: numeric seconds', () => {
+  assert.equal(parseRetryAfter('5'), 5000);
+});
+
+test('parseRetryAfter: zero', () => {
+  assert.equal(parseRetryAfter('0'), 0);
+});
+
+test('parseRetryAfter: HTTP-date in the future yields positive ms', () => {
+  const future = new Date(Date.now() + 3000).toUTCString();
+  const ms = parseRetryAfter(future);
+  assert.ok(ms > 0 && ms < 5000, `expected 0<ms<5000, got ${ms}`);
+});
+
+test('parseRetryAfter: HTTP-date in the past yields 0', () => {
+  const past = new Date(Date.now() - 3000).toUTCString();
+  assert.equal(parseRetryAfter(past), 0);
+});
+
+test('parseRetryAfter: null', () => {
+  assert.equal(parseRetryAfter(null), null);
+});
+
+test('parseRetryAfter: undefined', () => {
+  assert.equal(parseRetryAfter(undefined), null);
+});
+
+test('parseRetryAfter: garbage', () => {
+  assert.equal(parseRetryAfter('not a date or number'), null);
+});
+
+test('withRetry honours err.retryAfterMs over exponential backoff', async () => {
+  let n = 0;
+  const start = Date.now();
+  const fn = async () => {
+    n++;
+    if (n < 2) {
+      const e = new Error('rate limit'); e.status = 429; e.retryAfterMs = 200;
+      throw e;
+    }
+    return 'ok';
+  };
+  const r = await withRetry(fn, { attempts: 4, initialMs: 10000, factor: 1, jitterMs: 0 });
+  const elapsed = Date.now() - start;
+  assert.equal(r, 'ok');
+  assert.ok(elapsed < 1000, `expected <1s elapsed (retryAfter wins), got ${elapsed}ms`);
+});
+
+test('withRetry caps retryAfterMs at capMs', async () => {
+  let n = 0;
+  const start = Date.now();
+  const fn = async () => {
+    n++;
+    if (n < 2) {
+      const e = new Error('rate limit'); e.status = 429; e.retryAfterMs = 600_000;
+      throw e;
+    }
+    return 'ok';
+  };
+  const r = await withRetry(fn, { attempts: 2, initialMs: 1, factor: 1, jitterMs: 0, capMs: 50 });
+  const elapsed = Date.now() - start;
+  assert.equal(r, 'ok');
+  assert.ok(elapsed < 200, `expected <200ms (capped), got ${elapsed}ms`);
+});
+
+test('withRetry calls onRetry callback before each retry', async () => {
+  const events = [];
+  let n = 0;
+  const fn = async () => { n++; if (n < 3) { const e = new Error('e'); e.code = 'ECONNRESET'; throw e; } return 'ok'; };
+  await withRetry(fn, {
+    attempts: 4, initialMs: 1, factor: 1, jitterMs: 0,
+    onRetry: ({ attempt, attempts, delay, err }) => events.push({ attempt, attempts, delay, msg: err.message }),
+  });
+  assert.equal(events.length, 2);
+  assert.equal(events[0].attempt, 1);
+  assert.equal(events[0].attempts, 4);
+  assert.equal(events[1].attempt, 2);
+  assert.equal(events[0].msg, 'e');
+});
+
+test('withRetry default attempts is 4', async () => {
+  let n = 0;
+  const fn = async () => { n++; const e = new Error('e'); e.code = 'ECONNREFUSED'; throw e; };
+  await assert.rejects(() => withRetry(fn, { initialMs: 1, factor: 1, jitterMs: 0 }), /e/);
+  assert.equal(n, 4);
+});
+
+test('withRetry: 4 attempts of 429 throws original error', async () => {
+  let n = 0;
+  const fn = async () => { n++; const e = new Error('rate'); e.status = 429; throw e; };
+  await assert.rejects(() => withRetry(fn, { attempts: 4, initialMs: 1, factor: 1, jitterMs: 0 }), /rate/);
+  assert.equal(n, 4);
 });

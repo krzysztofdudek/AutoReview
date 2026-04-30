@@ -9,7 +9,10 @@ test('hooks.json valid and points to session-start.sh', async () => {
   const raw = await readFile('hooks/hooks.json', 'utf8');
   const h = JSON.parse(raw);
   assert.ok(h.hooks.SessionStart);
-  assert.match(h.hooks.SessionStart[0].command, /session-start\.sh/);
+  const entry = h.hooks.SessionStart[0];
+  assert.equal(entry.matcher, 'startup');
+  assert.ok(Array.isArray(entry.hooks), 'matcher entry must carry a nested hooks array');
+  assert.match(entry.hooks[0].command, /session-start\.sh/);
 });
 
 test('session-start.sh is executable', async () => {

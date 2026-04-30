@@ -21,6 +21,9 @@ examples/*/.autoreview/.history/
 # Own
 .temp
 
+# Per-developer test env overrides (.env.example committed)
+.env
+
 # E2E scratch (per-test throwaway git repos)
 tests/.e2e-scratch/
 

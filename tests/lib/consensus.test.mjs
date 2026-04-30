@@ -69,14 +69,9 @@ test('aggregateUsage returns null when no vote carried usage', async () => {
   assert.equal(r.usage, null);
 });
 
-test('voteConsensus times out a hanging provider call', async () => {
-  const stuck = {
-    name: 'stuck', model: 'x',
-    async verify() { return new Promise(() => {}); }, // never resolves
-  };
-  const start = Date.now();
-  const r = await voteConsensus(stuck, 'p', { consensus: 1, maxTokens: 100, timeoutMs: 100 });
-  const elapsed = Date.now() - start;
-  assert.ok(elapsed < 500, `expected ~100ms, took ${elapsed}ms`);
-  assert.equal(r.providerError, true);
-});
+// Note: voteConsensus no longer wraps verify in a Promise.race timeout. An outer
+// timer started ticking the moment the verify promise was created — i.e. before
+// sem.acquire() in provider-client's wrapped provider — so calls queued behind a
+// slow LLM died in the queue with provider:0% load. Each provider now enforces
+// its own timeout (HTTP `timeoutMs` for network providers, `runCli` `timeoutMs`
+// for CLI providers); the timer starts when the slot is actually held.
