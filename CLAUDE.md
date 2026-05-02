@@ -24,7 +24,7 @@ Version handshake: `.autoreview/runtime/.version` holds the plugin version that 
 - `scripts/lib/*.mjs` — pure modules, zero deps, reused by CLIs and tests.
 - `scripts/lib/providers/*.mjs` — LLM provider adapters (Ollama, Anthropic, OpenAI, Google, OpenAI-compat, Claude Code, Codex, Gemini CLI). Each implements `{ name, model, verify(prompt, opts), isAvailable(), contextWindowBytes() }`.
 - `hooks/session-start.sh` → `scripts/bin/session-start.mjs` — runs on Claude Code SessionStart.
-- `skills/<name>/SKILL.md` — agent-facing skill definitions (8 skills: setup, create-rule, context, guide, precheck, review, history, pull-remote). No `commands/` — skills are the only Claude Code surface.
+- `skills/<name>/SKILL.md` — agent-facing skill definitions (9 skills: setup, create-rule, context, guide, precheck, review, history, pull-remote, override-rule). No `commands/` — skills are the only Claude Code surface.
 - `templates/` — files copied into user repos.
 - `tests/lib/`, `tests/bin/`, `tests/e2e/`, `tests/api/`, `tests/plugin/` — node:test, no frameworks.
 
@@ -49,8 +49,13 @@ Every feature lands with tests. There's no linter/formatter — the style is wha
 3. **No comments explaining WHAT code does.** Only WHY (non-obvious constraint, past incident, subtle invariant). Well-named identifiers carry the what.
 4. **Never edit the user's root `.gitignore`.** The plugin writes `.autoreview/.gitignore` instead. Any code path that touches files in user repos must respect that boundary.
 5. **Scripts in `scripts/bin/`** must be Windows-safe (use `isMainModule(import.meta.url)` from `fs-utils.mjs`, never `import.meta.url === \`file://${process.argv[1]}\``).
-6. **Pre-commit hooks must never hard-block on provider errors.** `[error]` verdicts from unreachable LLMs are printed but must not cause exit 1. Only `[reject]` (rule-satisfied=false) blocks.
-7. **`validate.mjs` runs both under the `autoreview:review` skill (Claude Code agentic) and as a frozen runtime copy invoked by the pre-commit hook.** Any breaking change to its interface is a coordinated plugin bump — users stay on the old behavior until SessionStart auto-upgrades their runtime.
+6. **`validate.mjs` runs both under the `autoreview:review` skill (Claude Code agentic) and as a frozen runtime copy invoked by the pre-commit hook.** Any breaking change to its interface is a coordinated plugin bump — users stay on the old behavior until SessionStart auto-upgrades their runtime.
+
+**Exit code policy:** `severity: error` rules block on both `[reject]` and `[error]` verdicts (including provider unreachable). `severity: warning` rules never block. The old "soft precommit" blanket pass-through on provider errors is gone; per-rule `severity: warning` is the opt-out.
+
+**Tiers replace per-rule provider/model:** rules declare `tier:` (logical cost tier); each repo's `tiers:` config maps tier names to concrete provider+model. Five allowed names: `default`, `trivial`, `standard`, `heavy`, `critical`. `default` is mandatory.
+
+**The `override-rule` skill** is the path to adapt remote rules (change tier, severity, type, triggers) without forking the upstream source. Local rules are edited directly.
 
 ## Version bumps
 
@@ -64,8 +69,8 @@ The `.version` sentinel in user repos is written from `.claude-plugin/plugin.jso
 ## When debugging a user-reported review failure
 
 1. First ask what version the user is on: `cat .autoreview/runtime/.version`. If missing or older than current plugin, have them restart Claude Code so SessionStart re-syncs.
-2. `node .autoreview/runtime/bin/validate.mjs --files <path> --rule <id> --mode thinking` — same invocation the hook uses, plus the `reason` payload.
-3. `.autoreview/.history/<date>.jsonl` holds every verdict with attribution (actor, host, ci_run_id, commit_sha). That's the audit trail.
+2. `node .autoreview/runtime/bin/validate.mjs --files <path> --rule <id>` — same invocation the hook uses. To get file:line reasons, temporarily set `mode: thinking` on the relevant tier in `.autoreview/config.yaml`, re-run, then revert.
+3. `.autoreview/.history/<date>.jsonl` holds every verdict with attribution (actor, host, ci_run_id, commit_sha, tier, severity). That's the audit trail.
 
 ## Conventions in test writing
 

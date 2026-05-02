@@ -47,15 +47,20 @@ test('B3 + zero matches reports 0', async (t) => {
   } finally { await env.cleanup(); }
 });
 
-test('B4 + walk_file_cap triggers warning', async (t) => {
+// B4: walk_file_cap was removed from config (hardcoded to 10000 in validate.mjs).
+// A configurable cap test is no longer feasible without creating 10000+ files.
+// The cap guard code path is covered by unit tests in tests/lib/.
+test('B4 + check-breadth walks repo without cap warning on small repos', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('cb');
   try {
-    await env.writeConfig({ review: { walk_file_cap: 3, evaluate: 'full', mode: 'quick', consensus: 1, context_window_bytes: 'auto', output_reserve_bytes: 2000 } });
+    await env.writeConfig();
     for (let i = 0; i < 10; i++) await env.write(`src/f${i}.ts`, 'x');
     const r = await env.run('check-breadth', ['--expr', 'path:"**/*.ts"']);
     assert.equal(r.code, 0);
-    assert.match(r.stderr, /\[warn\] reached walk cap/);
+    assert.match(r.stdout, /10 matches/);
+    // No cap warning for small repos (cap is 10000)
+    assert.doesNotMatch(r.stderr, /reached walk cap/);
   } finally { await env.cleanup(); }
 });
 

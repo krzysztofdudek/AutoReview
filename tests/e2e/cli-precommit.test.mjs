@@ -1,49 +1,54 @@
 // tests/e2e/cli-precommit.test.mjs — K1..K7: pre-commit hook integration.
 // Hook runs out-of-process; uses the runtime copy under .autoreview/runtime/.
+//
+// Severity mapping (replaces old enforcement: soft/hard):
+//   severity: error  → exit 1 on reject (was "hard")
+//   severity: warning → exit 0 on reject (was "soft")
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createEnv, skipUnlessE2E } from './helpers/harness.mjs';
 
-async function initHookedEnv(env, { precommitMode = 'soft', provider = 'openai-compat' } = {}) {
+async function initHookedEnv(env, { ruleSeverity = 'warning', provider = 'openai-compat' } = {}) {
   // Init first (runtime + hook + default config), THEN overwrite config with our tailored one.
   const r = await env.run('init', ['--provider', provider, '--install-precommit']);
   await env.writeConfig({
-    provider: {
-      active: provider,
-      'openai-compat': { endpoint: 'http://127.0.0.1:8080/v1', model: 'test' },
-      ollama: { endpoint: 'http://localhost:11434', model: 'x' },
+    tiers: {
+      default: {
+        provider,
+        model: 'test',
+        endpoint: 'http://127.0.0.1:8080/v1',
+        parallel: 1,
+        mode: 'quick',
+        consensus: 1,
+      },
     },
-    review: {
-      evaluate: 'full', mode: 'quick', consensus: 1,
-      context_window_bytes: 'auto', output_reserve_bytes: 2000, walk_file_cap: 10000,
-    },
-    enforcement: { precommit: precommitMode, validate: 'hard' },
+    remote_rules: [],
     history: { log_to_file: false },
   });
-  return r;
+  return { r, ruleSeverity };
 }
 
-test('K1 + soft precommit + stub fail -> hook exit 0, [reject] on stderr', async (t) => {
+test('K1 + severity:warning + stub fail -> hook exit 0, [warn] on stderr', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('pc');
   try {
-    await initHookedEnv(env, { precommitMode: 'soft' });
-    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"' }, 'body');
+    await initHookedEnv(env, { ruleSeverity: 'warning' });
+    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"', severity: 'warning' }, 'body');
     await env.write('a.ts', 'x');
     env.git('add', 'a.ts');
     const r = await env.runHook('.git/hooks/pre-commit', { env: { AUTOREVIEW_STUB_PROVIDER: 'fail' } });
     assert.equal(r.code, 0);
-    assert.match(r.stderr, /\[reject\]/);
+    assert.match(r.stderr, /\[warn\]/);
   } finally { await env.cleanup(); }
 });
 
-test('K2 + hard precommit + stub fail -> hook exit 1, [reject] + [hint]', async (t) => {
+test('K2 + severity:error + stub fail -> hook exit 1, [reject] + [hint]', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('pc');
   try {
-    await initHookedEnv(env, { precommitMode: 'hard' });
-    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"' }, 'body');
+    await initHookedEnv(env, { ruleSeverity: 'error' });
+    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"', severity: 'error' }, 'body');
     await env.write('a.ts', 'x');
     env.git('add', 'a.ts');
     const r = await env.runHook('.git/hooks/pre-commit', { env: { AUTOREVIEW_STUB_PROVIDER: 'fail' } });
@@ -84,15 +89,15 @@ test('K4 + only binary file staged -> hook exit 0, no LLM call', async (t) => {
   } finally { await env.cleanup(); }
 });
 
-test('K5 + soft + server down -> exit 0 (tool never blocks)', async (t) => {
+test('K5 + severity:warning + server down -> exit 0 (warning rules don\'t block)', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('pc');
   try {
-    await initHookedEnv(env, { precommitMode: 'soft' });
+    await initHookedEnv(env, { ruleSeverity: 'warning' });
     // Point to dead port
     await env.write('.autoreview/config.yaml',
       (await env.read('.autoreview/config.yaml')).replace(/endpoint: "[^"]+"/, 'endpoint: "http://127.0.0.1:1"'));
-    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"' }, 'body');
+    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"', severity: 'warning' }, 'body');
     await env.write('a.ts', 'x');
     env.git('add', 'a.ts');
     const r = await env.runHook('.git/hooks/pre-commit');
@@ -100,27 +105,28 @@ test('K5 + soft + server down -> exit 0 (tool never blocks)', async (t) => {
   } finally { await env.cleanup(); }
 }, { timeout: 60000 });
 
-test('K6 + hard + server down -> still exit 0 (§22: provider error never promotes)', async (t) => {
+test('K6 + severity:error + server down -> exit 1 (error rules block on provider errors)', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('pc');
   try {
-    await initHookedEnv(env, { precommitMode: 'hard' });
+    await initHookedEnv(env, { ruleSeverity: 'error' });
     await env.write('.autoreview/config.yaml',
       (await env.read('.autoreview/config.yaml')).replace(/endpoint: "[^"]+"/, 'endpoint: "http://127.0.0.1:1"'));
-    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"' }, 'body');
+    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"', severity: 'error' }, 'body');
     await env.write('a.ts', 'x');
     env.git('add', 'a.ts');
     const r = await env.runHook('.git/hooks/pre-commit');
-    assert.equal(r.code, 0);
+    // Per spec §5: severity:error + [error] verdict (provider unreachable) → exit 1.
+    assert.equal(r.code, 1);
   } finally { await env.cleanup(); }
 }, { timeout: 60000 });
 
-test('K8 + real `git commit` blocks under hard + stub fail', async (t) => {
+test('K8 + real `git commit` blocks under severity:error + stub fail', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('pc');
   try {
-    await initHookedEnv(env, { precommitMode: 'hard' });
-    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"' }, 'body');
+    await initHookedEnv(env, { ruleSeverity: 'error' });
+    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"', severity: 'error' }, 'body');
     await env.write('a.ts', 'x');
     env.git('add', 'a.ts');
     const res = env.gitEnv({ AUTOREVIEW_STUB_PROVIDER: 'fail' }, 'commit', '-m', 'try');
@@ -131,12 +137,12 @@ test('K8 + real `git commit` blocks under hard + stub fail', async (t) => {
   } finally { await env.cleanup(); }
 });
 
-test('K9 + real `git commit` proceeds under soft + stub fail', async (t) => {
+test('K9 + real `git commit` proceeds under severity:warning + stub fail', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('pc');
   try {
-    await initHookedEnv(env, { precommitMode: 'soft' });
-    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"' }, 'body');
+    await initHookedEnv(env, { ruleSeverity: 'warning' });
+    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"', severity: 'warning' }, 'body');
     await env.write('a.ts', 'x');
     env.git('add', 'a.ts');
     const res = env.gitEnv({ AUTOREVIEW_STUB_PROVIDER: 'fail' }, 'commit', '-m', 'soft-pass');
@@ -150,13 +156,11 @@ test('K10 + hook forwards extra args via $@ to validate CLI', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('pc');
   try {
-    await initHookedEnv(env, { precommitMode: 'hard' });
-    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"' }, 'body');
+    await initHookedEnv(env, { ruleSeverity: 'error' });
+    await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"', severity: 'error' }, 'body');
     await env.write('a.ts', 'x');
     env.git('add', 'a.ts');
-    // Pass --mode thinking to the hook; if `$@` is wired the CLI sees it.
-    // We can't directly observe mode from output, so use --rule with a non-existent rule
-    // id: validate then matches no rule → exit 0 silently regardless of stub:fail.
+    // Pass --rule with a non-existent rule id: validate matches no rule → exit 0 silently.
     const r = await env.runHook('.git/hooks/pre-commit', {
       env: { AUTOREVIEW_STUB_PROVIDER: 'fail' },
       args: ['--rule', 'does-not-exist'],
@@ -170,7 +174,7 @@ test('K7 + no .autoreview/config.yaml -> hook exit 0 silently', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('pc');
   try {
-    await initHookedEnv(env, { precommitMode: 'hard' });
+    await initHookedEnv(env, { ruleSeverity: 'error' });
     // Delete config after install
     await (await import('node:fs/promises')).rm(`${env.dir}/.autoreview/config.yaml`);
     await env.write('a.ts', 'x');

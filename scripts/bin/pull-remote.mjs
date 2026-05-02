@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // scripts/bin/pull-remote.mjs
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { readdir } from 'node:fs/promises';
 import { parseArgs } from '../lib/args.mjs';
 import { repoRoot } from '../lib/git-utils.mjs';
@@ -19,6 +19,23 @@ async function countMdFiles(dir) {
     }
   } catch {}
   return n;
+}
+
+async function collectRelIds(dir, base) {
+  const ids = new Set();
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const e of entries) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) {
+        for (const id of await collectRelIds(p, base)) ids.add(id);
+      } else if (e.name.endsWith('.md')) {
+        const rel = relative(base, p).split(sep).join('/').replace(/\.md$/, '');
+        ids.add(rel);
+      }
+    }
+  } catch {}
+  return ids;
 }
 
 export async function run(argv, ctx) {
@@ -53,10 +70,22 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     try {
       stdout.write(`pulling ${src.name} from ${src.url}@${src.ref}...\n`);
       await pullSource({ repoRoot: root, source: src, env });
-      const n = await countMdFiles(join(root, '.autoreview/remote_rules', src.name, src.ref));
+      const cacheRoot = join(root, '.autoreview/remote_rules', src.name, src.ref);
+      const n = await countMdFiles(cacheRoot);
       totalMd += n;
       succeeded++;
       stdout.write(`  ok (${n} .md files)\n`);
+      const overrides = src.overrides ?? {};
+      if (Object.keys(overrides).length > 0) {
+        const srcPath = src.path === '.' ? '' : (src.path ?? '');
+        const base = srcPath ? join(cacheRoot, srcPath) : cacheRoot;
+        const present = await collectRelIds(base, base);
+        for (const id of Object.keys(overrides)) {
+          if (!present.has(id)) {
+            stderr.write(`[warn] override for '${src.name}/${id}' but rule absent in fetched ref ${src.ref}\n`);
+          }
+        }
+      }
     } catch (err) {
       stderr.write(`[warn] source ${src.name} failed: ${err.message}\n`);
     }

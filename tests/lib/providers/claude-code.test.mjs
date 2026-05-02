@@ -93,3 +93,52 @@ test('claude-code contextWindowBytes = 200k tokens (~800kB)', async () => {
   const p = create({ model: 'haiku', ...fix('ok-envelope.mjs') });
   assert.equal(await p.contextWindowBytes(), 200_000 * 4);
 });
+
+test('claude-code invalid JSON stdout -> providerError', async () => {
+  const { writeFile, chmod } = await import('node:fs/promises');
+  const { dir, cleanup } = await makeTempDir('cc-json');
+  try {
+    const fixture = join(dir, 'bad-json.mjs');
+    await writeFile(fixture, `#!/usr/bin/env node\nprocess.stdout.write('not json at all');\nprocess.exit(0);\n`);
+    await chmod(fixture, 0o755);
+    const p = create({ model: 'haiku', _binary: execPath, _argPrefix: [fixture] });
+    const v = await p.verify('hello', {});
+    assert.equal(v.providerError, true);
+    assert.equal(v.raw, 'not json at all');
+  } finally { await cleanup(); }
+});
+
+test('claude-code envelope without usage -> no usage field on result', async () => {
+  const { writeFile, chmod } = await import('node:fs/promises');
+  const { dir, cleanup } = await makeTempDir('cc-nousage');
+  try {
+    const fixture = join(dir, 'no-usage.mjs');
+    const inner = JSON.stringify({ satisfied: true, reason: 'ok' });
+    const envelope = JSON.stringify({ type: 'result', result: '```json\n' + inner + '\n```' });
+    await writeFile(fixture, `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(envelope)});\nprocess.exit(0);\n`);
+    await chmod(fixture, 0o755);
+    const p = create({ model: 'haiku', _binary: execPath, _argPrefix: [fixture] });
+    const v = await p.verify('hello', {});
+    assert.equal(v.satisfied, true);
+    assert.equal(v.usage, undefined);
+  } finally { await cleanup(); }
+});
+
+test('claude-code envelope usage without total_tokens -> derives total from input+output', async () => {
+  const { writeFile, chmod } = await import('node:fs/promises');
+  const { dir, cleanup } = await makeTempDir('cc-total');
+  try {
+    const fixture = join(dir, 'no-total.mjs');
+    const inner = JSON.stringify({ satisfied: true, reason: 'ok' });
+    const envelope = JSON.stringify({
+      type: 'result',
+      result: '```json\n' + inner + '\n```',
+      usage: { input_tokens: 5, output_tokens: 3 },
+    });
+    await writeFile(fixture, `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(envelope)});\nprocess.exit(0);\n`);
+    await chmod(fixture, 0o755);
+    const p = create({ model: 'haiku', _binary: execPath, _argPrefix: [fixture] });
+    const v = await p.verify('hello', {});
+    assert.deepEqual(v.usage, { input_tokens: 5, output_tokens: 3, total_tokens: 8 });
+  } finally { await cleanup(); }
+});

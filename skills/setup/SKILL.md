@@ -21,7 +21,7 @@ Run when the repo has no `.autoreview/` directory and the user wants to enable r
    ```
    node -e "fetch('http://localhost:11434/api/tags').then(r=>r.json()).then(j=>console.log(j.models.map(m=>m.name).join('\n')))"
    ```
-   Ask which one to use. Do NOT assume the default `qwen2.5-coder:7b` is pulled. After init, patch `.autoreview/config.yaml`'s `provider.ollama.model` to the chosen model (or tell user to run `ollama pull <model>` if they want a different one).
+   Ask which one to use. Do NOT assume the default `qwen2.5-coder:7b` is pulled. After init, patch `.autoreview/config.yaml`'s `tiers.default.model` to the chosen model (or tell user to run `ollama pull <model>` if they want a different one).
 
 3. **Pre-commit hook?** Ask "install git pre-commit hook?" before init. If yes, add `--install-precommit`. Never install without explicit user okay.
 
@@ -31,6 +31,11 @@ Run when the repo has no `.autoreview/` directory and the user wants to enable r
    ```
    Supported flags: `--upgrade` (refresh existing config), `--provider <name>`, `--install-precommit`. Omit `--install-precommit` if the user declined in step 3.
 
-5. **Wrap-up.** Mention that the git pre-commit hook was installed (if requested) and the first example rule lives at `.autoreview/rules/example.md`. Point the user at the `autoreview:create-rule` skill to author their first rule.
+5. **Wrap-up.** Mention that the git pre-commit hook was installed (if requested) and the first example rule lives at `.autoreview/rules/example.md`. Briefly explain two key concepts the generated `config.yaml` comments cover in detail:
+
+   - **Tier model** — rules declare which tier they need (`tier: trivial`, `tier: standard`, etc.). Each tier maps to a provider+model in `config.yaml`. Changing providers is a config edit, not a rule rewrite. Commented tier examples are already in the generated config.
+   - **Overlay model** — if the repo pulls remote rule packs, individual rules can be tuned per-repo via `remote_rules[].overrides` without forking upstream. Useful for downgrading a noisy corp rule to `severity: warning`, or narrowing its triggers.
+
+   Point the user at the `autoreview:create-rule` skill to author their first rule. For remote rule overlays, use `autoreview:override-rule`.
 
 Never read `.autoreview/config.secrets.yaml` — it may contain keys.

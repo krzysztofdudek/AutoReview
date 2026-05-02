@@ -4,12 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createEnv, skipUnlessE2E } from './helpers/harness.mjs';
 
-const baseCfg = {
-  review: {
-    evaluate: 'full', mode: 'quick', consensus: 1,
-    context_window_bytes: 'auto', output_reserve_bytes: 2000, walk_file_cap: 10000,
-  },
-};
+// baseCfg is empty since all settings now live in tiers.* (redesign in 0.2.0).
+const baseCfg = {};
 
 test('W1 + walk skips node_modules / .git / dist / build / .autoreview by default', async (t) => {
   skipUnlessE2E(t);
@@ -63,17 +59,19 @@ test('W3 + hidden files excluded unless includeHidden (walk default)', async (t)
   } finally { await env.cleanup(); }
 });
 
-test('W4 + walk_file_cap honored with onCapReached warn', async (t) => {
+// W4: walk_file_cap was removed from config (hardcoded to 10000 in validate.mjs).
+// Configurable cap test removed. This verifies that scope:all still walks correctly.
+test('W4 + scope:all walks all files without truncation on small repos', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('walk');
   try {
-    await env.writeConfig({
-      review: { ...baseCfg.review, walk_file_cap: 2 },
-    });
+    await env.writeConfig(baseCfg);
     await env.writeRule('r.md', { name: 'R', triggers: 'path:"**/*.ts"' }, 'body');
-    for (let i = 0; i < 10; i++) await env.write(`f${i}.ts`, 'x');
+    for (let i = 0; i < 5; i++) await env.write(`f${i}.ts`, 'x');
     const r = await env.run('validate', ['--scope', 'all'], { stub: 'pass' });
     assert.equal(r.code, 0);
-    assert.match(r.stderr, /reached walk cap/);
+    // All 5 files should be reviewed
+    const passes = (r.stderr.match(/\[pass\]/g) ?? []).length;
+    assert.equal(passes, 5);
   } finally { await env.cleanup(); }
 });

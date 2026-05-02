@@ -6,14 +6,18 @@ import assert from 'node:assert/strict';
 import { createEnv, skipUnlessE2E } from './helpers/harness.mjs';
 import { loadConfig } from '../../scripts/lib/config-loader.mjs';
 
-test('F1 + config.personal.yaml overrides provider.active', async (t) => {
+test('F1 + config.personal.yaml overrides tiers.default.provider', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('cfg');
   try {
-    await env.writeConfig({ provider: { active: 'ollama', ollama: { endpoint: 'http://x', model: 'm' } } });
-    await env.write('.autoreview/config.personal.yaml', 'provider:\n  active: openai\n');
+    await env.writeConfig({
+      tiers: { default: { provider: 'ollama', model: 'qwen2.5-coder:7b', endpoint: 'http://localhost:11434' } },
+    });
+    await env.write('.autoreview/config.personal.yaml',
+      'tiers:\n  default:\n    provider: ollama\n    model: phi3:mini\n    endpoint: http://localhost:11434\n');
     const cfg = await loadConfig(env.dir, { env: {} });
-    assert.equal(cfg.provider.active, 'openai');
+    assert.equal(cfg.tiers.default.provider, 'ollama');
+    assert.equal(cfg.tiers.default.model, 'phi3:mini');
   } finally { await env.cleanup(); }
 });
 
@@ -38,14 +42,15 @@ test('F3 + ANTHROPIC_API_KEY env populates secrets.anthropic.api_key', async (t)
   } finally { await env.cleanup(); }
 });
 
-test('F3b + env var overrides secrets file for same provider', async (t) => {
+test('F3b + secrets file beats env var when both present (file wins)', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('cfg');
   try {
     await env.writeConfig();
     await env.write('.autoreview/config.secrets.yaml', 'anthropic:\n  api_key: "file-key"\n');
     const cfg = await loadConfig(env.dir, { env: { ANTHROPIC_API_KEY: 'env-key' } });
-    assert.equal(cfg.secrets.anthropic.api_key, 'env-key');
+    // Secrets file takes precedence over env var per config-loader semantics.
+    assert.equal(cfg.secrets.anthropic.api_key, 'file-key');
   } finally { await env.cleanup(); }
 });
 
@@ -53,22 +58,24 @@ test('F4 - invalid YAML -> loadConfig throws', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('cfg');
   try {
-    await env.write('.autoreview/config.yaml', 'provider:\n  active: ollama\n  *broken\n');
+    await env.write('.autoreview/config.yaml', 'tiers:\n  default:\n    provider: ollama\n  *broken\n');
     let err;
     try { await loadConfig(env.dir, { env: {} }); } catch (e) { err = e; }
     assert.ok(err, 'expected error on invalid YAML');
   } finally { await env.cleanup(); }
 });
 
-test('F4b - validate.active = bogus provider -> loadConfig throws', async (t) => {
+test('F4b - unknown tier provider -> loadConfig throws', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('cfg');
   try {
-    await env.writeConfig({ provider: { active: 'bogus' } });
+    await env.writeConfig({
+      tiers: { default: { provider: 'bogus', model: 'x', endpoint: 'http://localhost:1' } },
+    });
     let err;
     try { await loadConfig(env.dir, { env: {} }); } catch (e) { err = e; }
     assert.ok(err);
-    assert.match(err.message, /unknown provider\.active/);
+    assert.match(err.message, /unknown provider/);
   } finally { await env.cleanup(); }
 });
 
@@ -76,7 +83,9 @@ test('F4c - even consensus -> loadConfig throws', async (t) => {
   skipUnlessE2E(t);
   const env = await createEnv('cfg');
   try {
-    await env.writeConfig({ review: { evaluate: 'full', mode: 'quick', consensus: 2, context_window_bytes: 'auto', output_reserve_bytes: 2000, walk_file_cap: 10000 } });
+    await env.writeConfig({
+      tiers: { default: { provider: 'ollama', model: 'x', endpoint: 'http://localhost:11434', consensus: 2 } },
+    });
     let err;
     try { await loadConfig(env.dir, { env: {} }); } catch (e) { err = e; }
     assert.ok(err);

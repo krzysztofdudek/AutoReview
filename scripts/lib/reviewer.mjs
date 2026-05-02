@@ -7,9 +7,6 @@ import { voteConsensus } from './consensus.mjs';
 import { appendVerdict } from './history.mjs';
 import { scanSuppressMarkers } from './suppress-parser.mjs';
 
-function resolveMode(config) { return config.review.mode; }
-function resolveEvaluate(config, rule) { return rule?.frontmatter?.evaluate ?? config.review.evaluate; }
-
 function triggersAst(rule) {
   if (rule._triggersAst) return rule._triggersAst;
   return rule._triggersAst = parseTrigger(rule.frontmatter.triggers);
@@ -17,8 +14,8 @@ function triggersAst(rule) {
 
 const REASONING_SUPPORT = new Set(['anthropic', 'openai', 'google', 'openai-compat']);
 
-async function resolveContextWindow(config, provider, _state) {
-  if (config.review.context_window_bytes !== 'auto') return config.review.context_window_bytes;
+async function resolveContextWindow(tier, provider, _state) {
+  if (tier.context_window_bytes !== 'auto') return tier.context_window_bytes;
   const key = `${provider.name}|${provider.model}`;
   // Cache the in-flight promise so concurrent reviewFile() calls under Promise.all share
   // a single contextWindowBytes() round-trip. Caching only the resolved value would race
@@ -34,7 +31,7 @@ async function resolveContextWindow(config, provider, _state) {
 export async function reviewFile(opts) {
   const {
     repoRoot, config, rules, file, diff,
-    intentGate, historyEnabled, historyAppend,
+    historyEnabled, historyAppend,
     _providerOverride = null,
   } = opts;
   const _state = opts._state ?? { ctxCache: new Map(), warnedReasoning: new Set() };
@@ -55,11 +52,19 @@ export async function reviewFile(opts) {
     const matches = evalTrigger(ast, { path: file.path, content: file.content, binary: contentForbidden });
     if (!matches) continue;
 
-    if (rule.frontmatter.intent && config.review.intent_triggers && intentGate) {
-      const intentResult = await intentGate.check(rule, file.path, file.content);
-      if (intentResult === 'skip-no') continue;
-      // skip-budget: fall through to Layer 3 verify per design §3
-      // (caller emits the one-time warning via onBudgetExhausted)
+    if (rule.frontmatter._invalid) {
+      const v = {
+        rule: rule.id, verdict: 'error', reason: rule.frontmatter._invalid,
+        provider: null, model: null, mode: null,
+        tier: rule.frontmatter.tier ?? 'default',
+        severity: rule.frontmatter.severity ?? 'error',
+        duration_ms: 0,
+      };
+      verdicts.push(v);
+      matchedVerdicts[rule.id] = 'error';
+      if (historyAppend) await historyAppend({ type: 'verdict', file: file.path, ...v });
+      else if (historyEnabled) await appendVerdict(repoRoot, { file: file.path, ...v });
+      continue;
     }
 
     matched.push(rule.id);
@@ -75,29 +80,51 @@ export async function reviewFile(opts) {
       warn(`[warn] @autoreview-ignore at ${file.path}:${bad.line} missing mandatory <reason>`);
     }
 
-    const provider = _providerOverride ?? getProvider(config, {
-      ruleProvider: rule.frontmatter.provider,
-      ruleModel: rule.frontmatter.model,
-    });
+    const tierName = rule.frontmatter.tier ?? 'default';
+    const tier = config.tiers?.[tierName];
+
+    let provider;
+    try {
+      provider = _providerOverride ?? getProvider(config, { tierName });
+    } catch (err) {
+      const v = {
+        rule: rule.id, verdict: 'error', reason: err.message,
+        provider: null, model: null, mode: null,
+        tier: tierName,
+        severity: rule.frontmatter.severity ?? 'error',
+        duration_ms: 0,
+      };
+      verdicts.push(v);
+      matchedVerdicts[rule.id] = 'error';
+      if (historyAppend) await historyAppend({ type: 'verdict', file: file.path, ...v });
+      else if (historyEnabled) await appendVerdict(repoRoot, { file: file.path, ...v });
+      continue;
+    }
 
     // Dedupe under concurrent fan-out depends on has()/add() being in one synchronous block
     // (no await between them) — JS event loop then guarantees one warn per shared _state.
     // Inserting an await here would let two concurrent reviewFile invocations both pass the
     // !has() check before either adds, producing duplicate warns.
-    if (config.review.reasoning_effort && !REASONING_SUPPORT.has(provider.name) && !_state.warnedReasoning.has(provider.name)) {
+    if (tier?.reasoning_effort && !REASONING_SUPPORT.has(provider.name) && !_state.warnedReasoning.has(provider.name)) {
       _state.warnedReasoning.add(provider.name);
       warn(`[warn] provider ${provider.name} does not support reasoning_effort; ignoring for this run`);
     }
 
-    const contextWindowBytes = await resolveContextWindow(config, provider, _state);
+    const effectiveTier = tier;
+    const contextWindowBytes = await resolveContextWindow(effectiveTier, provider, _state);
     const fit = fitFile({
       fileContent: file.content, rule, diff,
       contextWindowBytes,
-      outputReserveBytes: config.review.output_reserve_bytes,
     });
 
     if (fit.action === 'skip') {
-      const v = { rule: rule.id, verdict: 'error', reason: `skip: ${fit.reason}`, provider: provider.name, model: provider.model, mode: resolveMode(config), duration_ms: 0 };
+      const v = {
+        rule: rule.id, verdict: 'error', reason: `skip: ${fit.reason}`,
+        provider: provider.name, model: provider.model, mode: effectiveTier.mode,
+        tier: tierName,
+        severity: rule.frontmatter.severity ?? 'error',
+        duration_ms: 0,
+      };
       verdicts.push(v);
       matchedVerdicts[rule.id] = v.verdict;
       if (historyAppend) await historyAppend({ type: 'verdict', file: file.path, ...v });
@@ -106,20 +133,20 @@ export async function reviewFile(opts) {
     }
 
     const effectiveFile = { ...file, content: fit.fileContent };
-    const mode = resolveMode(config);
+    const mode = effectiveTier.mode;
     const prompt = buildPrompt({
       rule, file: effectiveFile, diff,
-      mode, evaluate: resolveEvaluate(config, rule),
+      mode,
     });
     const start = Date.now();
-    // Single output cap for both modes via `review.output_max_tokens`. Default 0 = no cap
+    // Single output cap for both modes via tier.output_max_tokens. Default 0 = no cap
     // (adapters omit the field / use -1 / fall back to provider minimum where the API
     // demands it). Reasoning-first models need headroom for their trace before the
     // verdict JSON — hardcoded caps kept silently chopping their output.
     const vote = await voteConsensus(provider, prompt, {
-      consensus: config.review.consensus,
-      maxTokens: config.review.output_max_tokens ?? 0,
-      reasoningEffort: config.review.reasoning_effort,
+      consensus: effectiveTier.consensus,
+      maxTokens: effectiveTier.output_max_tokens ?? 0,
+      reasoningEffort: effectiveTier.reasoning_effort,
     });
     const duration_ms = Date.now() - start;
 
@@ -137,9 +164,15 @@ export async function reviewFile(opts) {
     else verdict = vote.satisfied ? 'pass' : 'fail';
 
     const reason = unreliablePass
-      ? `truncated: reviewer saw only first ${Buffer.byteLength(fit.fileContent)} bytes of ${Buffer.byteLength(file.content)}; pass verdict on partial content is unreliable — bump review.context_window_bytes or split the file`
+      ? `truncated: reviewer saw only first ${Buffer.byteLength(fit.fileContent)} bytes of ${Buffer.byteLength(file.content)}; pass verdict on partial content is unreliable — bump context_window_bytes in the tier or split the file`
       : (vote.reason ?? null);
-    const rec = { rule: rule.id, verdict, reason, provider: provider.name, model: provider.model, mode, duration_ms };
+    const rec = {
+      rule: rule.id, verdict, reason,
+      provider: provider.name, model: provider.model, mode,
+      tier: tierName,
+      severity: rule.frontmatter.severity ?? 'error',
+      duration_ms,
+    };
     if (vote.usage) rec.usage = vote.usage;
     if (hasSuppressed) {
       rec.suppressed = vote.suppressed.map(s => {

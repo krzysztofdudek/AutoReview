@@ -1,109 +1,101 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { loadRules } from '../../scripts/lib/rule-loader.mjs';
-import { DEFAULT_CONFIG } from '../../scripts/lib/config-loader.mjs';
 
-async function fixture(ruleFiles) {
-  const dir = await mkdtemp(join(tmpdir(), 'ar-rl-'));
-  for (const [path, body] of Object.entries(ruleFiles)) {
-    const full = join(dir, path);
-    await mkdir(join(full, '..'), { recursive: true });
-    await writeFile(full, body);
-  }
+async function repoWithRule(filename, body) {
+  const dir = await mkdtemp(join(tmpdir(), 'ar-rules-'));
+  await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+  await writeFile(join(dir, '.autoreview/rules', filename), body);
   return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 
-const RULE = (name, triggers, body = 'rule body') => `---
-name: "${name}"
-triggers: '${triggers}'
+test('local rule with explicit tier carries tier in effective frontmatter', async () => {
+  const { dir, cleanup } = await repoWithRule('foo.md', `---
+name: "Foo"
+triggers: 'path:"**/*.ts"'
+tier: heavy
+severity: error
+type: auto
 ---
-${body}`;
-
-test('loads local rules with id from path', async () => {
-  const { dir, cleanup } = await fixture({
-    '.autoreview/rules/api/auth.md': RULE('Auth', 'path:"src/auth/**"'),
-    '.autoreview/rules/style.md': RULE('Style', 'path:"**/*.ts"'),
-  });
+body`);
   try {
-    const { rules, warnings } = await loadRules(dir, DEFAULT_CONFIG);
-    assert.equal(rules.length, 2);
-    const ids = rules.map(r => r.id).sort();
-    assert.deepEqual(ids, ['api/auth', 'style']);
+    const { rules, warnings } = await loadRules(dir, { remote_rules: [] });
     assert.equal(warnings.length, 0);
-  } finally { await cleanup(); }
-});
-
-test('local wins over remote on id collision', async () => {
-  // Local: .autoreview/rules/shared/x.md → id = "shared/x"
-  // Remote: .autoreview/remote_rules/shared/v1/x.md → id = "shared/x" (sourceName prefix)
-  // Both yield the same id → collision → local wins.
-  const { dir, cleanup } = await fixture({
-    '.autoreview/rules/shared/x.md': RULE('Local X', 'path:"**"'),
-    '.autoreview/remote_rules/shared/v1/x.md': RULE('Remote X', 'path:"**"'),
-  });
-  try {
-    const cfg = { ...DEFAULT_CONFIG, remote_rules: [{ name: 'shared', url: '', ref: 'v1', path: '.' }] };
-    const { rules, warnings } = await loadRules(dir, cfg);
     assert.equal(rules.length, 1);
-    assert.equal(rules[0].frontmatter.name, 'Local X');
-    assert.ok(warnings.some(w => w.includes('collision')));
+    assert.equal(rules[0].frontmatter.tier, 'heavy');
+    assert.equal(rules[0].frontmatter.severity, 'error');
+    assert.equal(rules[0].frontmatter.type, 'auto');
   } finally { await cleanup(); }
 });
 
-test('non-colliding local and remote produce two distinct rules', async () => {
-  // Local: .autoreview/rules/x.md → id = "x"
-  // Remote: .autoreview/remote_rules/shared/v1/x.md → id = "shared/x"
-  // Different ids → no collision → both rules loaded, no warning.
-  const { dir, cleanup } = await fixture({
-    '.autoreview/rules/x.md': RULE('Local X', 'path:"**"'),
-    '.autoreview/remote_rules/shared/v1/x.md': RULE('Remote X', 'path:"**"'),
-  });
+test('local rule without optional fields applies defaults', async () => {
+  const { dir, cleanup } = await repoWithRule('bar.md', `---
+name: "Bar"
+triggers: 'path:"**/*.ts"'
+---
+body`);
   try {
-    const cfg = { ...DEFAULT_CONFIG, remote_rules: [{ name: 'shared', url: '', ref: 'v1', path: '.' }] };
-    const { rules, warnings } = await loadRules(dir, cfg);
-    assert.equal(rules.length, 2);
-    const ids = rules.map(r => r.id).sort();
-    assert.deepEqual(ids, ['shared/x', 'x']);
-    assert.ok(!warnings.some(w => w.includes('collision')));
+    const { rules } = await loadRules(dir, { remote_rules: [] });
+    assert.equal(rules[0].frontmatter.tier, 'default');
+    assert.equal(rules[0].frontmatter.severity, 'error');
+    assert.equal(rules[0].frontmatter.type, 'auto');
   } finally { await cleanup(); }
 });
 
-test('config.rules.disabled removes rules', async () => {
-  const { dir, cleanup } = await fixture({
-    '.autoreview/rules/keep.md': RULE('Keep', 'path:"**"'),
-    '.autoreview/rules/drop.md': RULE('Drop', 'path:"**"'),
-  });
+test('unknown tier value produces _invalid marker', async () => {
+  const { dir, cleanup } = await repoWithRule('bad.md', `---
+name: "Bad"
+triggers: 'path:"**/*.ts"'
+tier: bogus
+---
+body`);
   try {
-    const cfg = { ...DEFAULT_CONFIG, rules: { enabled_extra: [], disabled: ['drop'] } };
-    const { rules } = await loadRules(dir, cfg);
-    assert.deepEqual(rules.map(r => r.id).sort(), ['keep']);
-  } finally { await cleanup(); }
-});
-
-test('default:disabled dropped unless enabled_extra lists it', async () => {
-  const RULE_OPT = (n, t) => `---\nname: "${n}"\ntriggers: '${t}'\ndefault: disabled\n---\nbody`;
-  const { dir, cleanup } = await fixture({
-    '.autoreview/rules/opt.md': RULE_OPT('Opt', 'path:"**"'),
-  });
-  try {
-    const cfgOff = { ...DEFAULT_CONFIG, rules: { enabled_extra: [], disabled: [] } };
-    assert.equal((await loadRules(dir, cfgOff)).rules.length, 0);
-    const cfgOn = { ...DEFAULT_CONFIG, rules: { enabled_extra: ['opt'], disabled: [] } };
-    assert.equal((await loadRules(dir, cfgOn)).rules.length, 1);
-  } finally { await cleanup(); }
-});
-
-test('malformed frontmatter emits warning, continues others', async () => {
-  const { dir, cleanup } = await fixture({
-    '.autoreview/rules/bad.md': `---\nname:\ntriggers:\n---\nbody`,
-    '.autoreview/rules/good.md': RULE('Good', 'path:"**"'),
-  });
-  try {
-    const { rules, warnings } = await loadRules(dir, DEFAULT_CONFIG);
+    const { rules } = await loadRules(dir, { remote_rules: [] });
     assert.equal(rules.length, 1);
-    assert.ok(warnings.length >= 1);
+    assert.match(rules[0].frontmatter._invalid, /tier 'bogus' unknown/);
+  } finally { await cleanup(); }
+});
+
+test('unknown severity value produces _invalid', async () => {
+  const { dir, cleanup } = await repoWithRule('bad.md', `---
+name: "Bad"
+triggers: 'path:"**/*.ts"'
+severity: paranoid
+---
+body`);
+  try {
+    const { rules } = await loadRules(dir, { remote_rules: [] });
+    assert.match(rules[0].frontmatter._invalid, /severity 'paranoid' unknown/);
+  } finally { await cleanup(); }
+});
+
+test('unknown type value produces _invalid', async () => {
+  const { dir, cleanup } = await repoWithRule('bad.md', `---
+name: "Bad"
+triggers: 'path:"**/*.ts"'
+type: cron
+---
+body`);
+  try {
+    const { rules } = await loadRules(dir, { remote_rules: [] });
+    assert.match(rules[0].frontmatter._invalid, /type 'cron' unknown/);
+  } finally { await cleanup(); }
+});
+
+test('multiple invalid fields in _invalid joined with semicolon', async () => {
+  const { dir, cleanup } = await repoWithRule('multi-bad.md', `---
+name: "Multi"
+triggers: 'path:"**/*"'
+tier: bogus
+severity: paranoid
+---
+body`);
+  try {
+    const { rules } = await loadRules(dir, { remote_rules: [] });
+    assert.equal(rules.length, 1);
+    assert.match(rules[0].frontmatter._invalid, /tier 'bogus'.+;.*severity 'paranoid'/);
   } finally { await cleanup(); }
 });

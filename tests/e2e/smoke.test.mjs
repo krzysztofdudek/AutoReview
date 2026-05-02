@@ -6,22 +6,27 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { run as validate } from '../../scripts/bin/validate.mjs';
 
-test('smoke: validate --scope staged with stub pass exits 0 with [pass]', async () => {
+async function makeValidateRepo() {
   const dir = await mkdtemp(join(tmpdir(), 'ar-smoke-'));
-  try {
-    spawnSync('git', ['init', '-q'], { cwd: dir });
-    spawnSync('git', ['config', 'user.email', 't@t'], { cwd: dir });
-    spawnSync('git', ['config', 'user.name', 't'], { cwd: dir });
-    spawnSync('git', ['commit', '--allow-empty', '-q', '-m', 'init'], { cwd: dir });
+  const run = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+  run('init', '-q');
+  run('config', 'user.email', 't@t');
+  run('config', 'user.name', 't');
+  run('commit', '--allow-empty', '-q', '-m', 'init');
+  return { dir, run, cleanup: () => rm(dir, { recursive: true, force: true }) };
+}
 
+test('smoke: validate --scope staged with stub pass exits 0 with [pass]', async () => {
+  const { dir, cleanup } = await makeValidateRepo();
+  try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
     await writeFile(
       join(dir, '.autoreview/config.yaml'),
-      `provider:\n  active: ollama\nenforcement:\n  validate: hard\n`,
+      `version: "0.1"\ntiers:\n  default:\n    provider: ollama\n    model: qwen2.5-coder:7b\n    endpoint: http://localhost:11434\nremote_rules: []\nhistory:\n  log_to_file: false\n`,
     );
     await writeFile(
       join(dir, '.autoreview/rules/r.md'),
-      `---\nname: "R"\ntriggers: 'path:"**/*.ts"'\n---\nRule body.\n`,
+      `---\nname: "R"\ntriggers: 'path:"**/*.ts"'\nseverity: error\ntype: auto\n---\nRule body.\n`,
     );
     await writeFile(join(dir, 'a.ts'), 'x');
     spawnSync('git', ['add', 'a.ts'], { cwd: dir });
@@ -35,22 +40,20 @@ test('smoke: validate --scope staged with stub pass exits 0 with [pass]', async 
     });
     assert.equal(code, 0);
     assert.match(err.join(''), /\[pass\]/);
-  } finally { await rm(dir, { recursive: true, force: true }); }
+  } finally { await cleanup(); }
 });
 
-test('smoke: hard enforcement + stub fail -> exit 1 with [reject]', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'ar-smoke-'));
+test('smoke: severity:error + stub fail -> exit 1 with [reject]', async () => {
+  const { dir, cleanup } = await makeValidateRepo();
   try {
-    spawnSync('git', ['init', '-q'], { cwd: dir });
-    spawnSync('git', ['config', 'user.email', 't@t'], { cwd: dir });
-    spawnSync('git', ['config', 'user.name', 't'], { cwd: dir });
-    spawnSync('git', ['commit', '--allow-empty', '-q', '-m', 'init'], { cwd: dir });
-
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), `enforcement:\n  validate: hard\n`);
+    await writeFile(
+      join(dir, '.autoreview/config.yaml'),
+      `version: "0.1"\ntiers:\n  default:\n    provider: ollama\n    model: qwen2.5-coder:7b\n    endpoint: http://localhost:11434\nremote_rules: []\nhistory:\n  log_to_file: false\n`,
+    );
     await writeFile(
       join(dir, '.autoreview/rules/r.md'),
-      `---\nname: "R"\ntriggers: 'path:"**/*.ts"'\n---\nbody`,
+      `---\nname: "R"\ntriggers: 'path:"**/*.ts"'\nseverity: error\ntype: auto\n---\nbody`,
     );
     await writeFile(join(dir, 'a.ts'), 'x');
     spawnSync('git', ['add', 'a.ts'], { cwd: dir });
@@ -64,21 +67,20 @@ test('smoke: hard enforcement + stub fail -> exit 1 with [reject]', async () => 
     });
     assert.equal(code, 1);
     assert.match(err.join(''), /\[reject\]/);
-  } finally { await rm(dir, { recursive: true, force: true }); }
+  } finally { await cleanup(); }
 });
 
-test('smoke: soft precommit + stub fail -> exit 0 with warning', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'ar-smoke-'));
+test('smoke: severity:warning + stub fail -> exit 0 with [warn]', async () => {
+  const { dir, cleanup } = await makeValidateRepo();
   try {
-    spawnSync('git', ['init', '-q'], { cwd: dir });
-    spawnSync('git', ['config', 'user.email', 't@t'], { cwd: dir });
-    spawnSync('git', ['config', 'user.name', 't'], { cwd: dir });
-    spawnSync('git', ['commit', '--allow-empty', '-q', '-m', 'init'], { cwd: dir });
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), `enforcement:\n  precommit: soft\n`);
+    await writeFile(
+      join(dir, '.autoreview/config.yaml'),
+      `version: "0.1"\ntiers:\n  default:\n    provider: ollama\n    model: qwen2.5-coder:7b\n    endpoint: http://localhost:11434\nremote_rules: []\nhistory:\n  log_to_file: false\n`,
+    );
     await writeFile(
       join(dir, '.autoreview/rules/r.md'),
-      `---\nname: "R"\ntriggers: 'path:"**/*.ts"'\n---\nbody`,
+      `---\nname: "R"\ntriggers: 'path:"**/*.ts"'\nseverity: warning\ntype: auto\n---\nbody`,
     );
     await writeFile(join(dir, 'a.ts'), 'x');
     spawnSync('git', ['add', 'a.ts'], { cwd: dir });
@@ -91,6 +93,6 @@ test('smoke: soft precommit + stub fail -> exit 0 with warning', async () => {
       stderr: { write: s => err.push(s) },
     });
     assert.equal(code, 0);
-    assert.match(err.join(''), /\[reject\]/);
-  } finally { await rm(dir, { recursive: true, force: true }); }
+    assert.match(err.join(''), /\[warn\]/);
+  } finally { await cleanup(); }
 });

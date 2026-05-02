@@ -15,4 +15,4 @@ bash run.sh
 
 Expected: `[reject] src/broken.ts :: example/must-export-default` with a reason about the missing default export.
 
-To use a cloud provider instead, edit `.autoreview/config.yaml` and set `provider.active` + add a key.
+To use a cloud provider instead, edit `.autoreview/config.yaml` and update the `tiers.default.provider`, `tiers.default.model`, and endpoint configuration as needed.

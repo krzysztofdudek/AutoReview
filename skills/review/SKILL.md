@@ -9,7 +9,9 @@ description: Use when user asks "does this pass review?", "does this file pass o
 
 ## Context: the pre-commit hook runs this automatically
 
-When user runs `git commit`, the hook at `.git/hooks/pre-commit` shells into this same validate script with `--scope staged --context precommit`. If user reports a `[reject]` line from their commit, the hook already ran — you don't need to re-run it, but you CAN re-run with `--mode thinking --rule <id>` to get a detailed reason.
+When user runs `git commit`, the hook at `.git/hooks/pre-commit` shells into this same validate script with `--scope staged --context precommit`. If user reports a `[reject]` line from their commit, the hook already ran — you don't need to re-run it, but you CAN get a detailed file:line reason by temporarily setting `tiers.<name>.mode: thinking` in `.autoreview/config.yaml` and re-running, then reverting the change.
+
+`type: manual` rules are **always skipped** by the pre-commit hook and by default `autoreview:review` invocations. They only run when explicitly named via `--rule <id>`.
 
 ## On-demand invocation
 
@@ -25,25 +27,42 @@ Scope options:
 - `--scope all` — sweep entire repo (walk-capped at 10,000 files).
 - `--sha <commit>` — post-factum review of a specific commit.
 - `--files <path> [--files <path>]` — explicit file list.
-- `--rule <id>` — restrict to specific rule(s).
-- `--mode thinking` — force reasoning output with file:line refs.
+- `--rule <id>` — restrict to a specific rule (required for `type: manual` rules; also works to narrow `type: auto` rules).
+
+To get file:line reasoning in a verdict, temporarily set `tiers.<name>.mode: thinking` in `.autoreview/config.yaml`, re-run, then revert.
+
+## Explicit opt-in for manual rules
+
+Rules with `type: manual` never run automatically. To invoke them:
+
+```
+node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/validate.mjs \
+  --files src/api/foo.ts --rule corp/audit-log-on-handlers
+```
+
+Without `--rule`, `type: manual` rules are silently skipped regardless of whether triggers match.
 
 ## Debugging a blocked commit
 
 If user says "my commit got rejected with `[reject] src/api/foo.ts :: api/validate-input`":
 
-1. Re-run the same rule in thinking mode to get a file:line reason:
+1. To get a file:line reason, temporarily set `tiers.<name>.mode: thinking` in `.autoreview/config.yaml` (where `<name>` is the tier the rule uses, e.g. `default`), then re-run:
    ```
    node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/validate.mjs \
-     --files src/api/foo.ts --rule api/validate-input --mode thinking
+     --files src/api/foo.ts --rule api/validate-input
    ```
+   Revert the mode change after retrieving the reason.
 2. Show the reason verbatim.
 3. Suggest: fix the code to satisfy the rule, OR (if the rule genuinely doesn't apply here) add an inline `@autoreview-ignore` marker — but only after user confirms the suppression.
 
 ## Reporting
 
-Report verdicts to the user verbatim: `[pass]` / `[reject]` / `[error]` / `[suppressed]` lines per `file :: rule` pair. Preserve the prefixes — pre-commit hooks and CI parse them. In thinking mode, rejects include a `reason:` line with file:line refs; in quick mode, a `why:` hint tells the user how to re-run for the reason.
+Report verdicts to the user verbatim: `[pass]` / `[reject]` / `[warn]` / `[error]` / `[suppressed]` lines per `file :: rule` pair. Preserve the prefixes — pre-commit hooks and CI parse them. When `tiers.<name>.mode` is `thinking`, rejects include a `reason:` line with file:line refs; in quick mode, a `why:` hint tells the user to enable thinking mode in config.
 
-Default scope when no flags are passed: `--scope uncommitted --mode thinking --context validate`. Hard enforcement — the script exits 1 on any reject.
+- `[reject]` — rule violated, `severity: error` → blocks commit (exit 1).
+- `[warn]` — rule violated, `severity: warning` → printed but exit 0.
+- `[error]` — provider unreachable, tier misconfigured, or rule has invalid frontmatter → exit code depends on severity.
 
-If the tool returns warnings about provider unreachability, mention the warning verbatim — do not attempt to bypass the soft-fail.
+Default scope when no flags are passed: `--scope uncommitted --context validate`.
+
+If a `severity: error` rule's tier provider is unreachable, the verdict is `[error]` and the commit is blocked (exit 1). To make a rule non-blocking on provider failure, set `severity: warning` in its frontmatter.

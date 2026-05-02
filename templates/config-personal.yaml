@@ -1,10 +1,22 @@
-# Personal overrides. Gitignored. Override any key from config.yaml.
-# Example: switch to a cloud provider just for your machine, or tune
-# per-provider parallelism (caps concurrent in-flight LLM calls).
+# Personal AutoReview overrides. Gitignored. Deep-merges over .autoreview/config.yaml.
 #
-# provider:
-#   active: anthropic
-#   anthropic:
-#     parallel: 4   # free-tier OpenAI users at 4 RPM should drop to 2-3
-# review:
-#   mode: thinking
+# Use this to:
+#   - swap in a different model for a tier on YOUR machine without committing it
+#   - lower / raise parallel limits for your network
+#   - add / override remote_rules.overrides for rules you handle differently
+#
+# Example: my repo's heavy tier is set to claude-sonnet, but I've got an Opus subscription
+# and want to use it locally:
+#
+# tiers:
+#   heavy:
+#     model: claude-opus-4-7
+#     reasoning_effort: high
+#
+# Example: my team set a corp rule to manual; I want it auto on MY machine:
+#
+# remote_rules:
+#   - name: corp-standards
+#     overrides:
+#       audit-log-on-handlers:
+#         type: auto

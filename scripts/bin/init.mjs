@@ -10,8 +10,40 @@ import { pullSource } from '../lib/remote-rules-pull.mjs';
 import { parse as parseYaml } from '../lib/yaml-min.mjs';
 import { ollamaHasModel } from '../lib/providers/ollama.mjs';
 import { syncRuntime } from '../lib/runtime-sync.mjs';
+import { ALLOWED_PROVIDERS as KNOWN_PROVIDERS } from '../lib/config-loader.mjs';
 
-const KNOWN_PROVIDERS = ['ollama', 'anthropic', 'openai', 'google', 'openai-compat', 'claude-code', 'codex', 'gemini-cli'];
+const PROVIDER_DEFAULTS = {
+  ollama:          { model: 'qwen2.5-coder:7b', endpoint: true },
+  anthropic:       { model: 'claude-haiku-4-5' },
+  openai:          { model: 'gpt-4o-mini' },
+  google:          { model: 'gemini-2.5-flash' },
+  'openai-compat': { model: 'your-model-id', endpoint: true, endpointDefault: 'https://your-endpoint/v1' },
+  'claude-code':   { model: 'haiku' },
+  codex:           { model: 'gpt-5' },
+  'gemini-cli':    { model: 'gemini-2.5-flash' },
+};
+
+function injectDefaultTier(template, provider, env) {
+  const defaults = PROVIDER_DEFAULTS[provider] ?? { model: 'your-model-id' };
+  const model = defaults.model;
+  let endpoint = null;
+  if (defaults.endpoint) {
+    endpoint = provider === 'ollama'
+      ? (env.OLLAMA_HOST ?? 'http://localhost:11434')
+      : (defaults.endpointDefault ?? '');
+  }
+
+  let defaultBlock = `    provider: ${provider}\n    model: ${model}`;
+  if (endpoint !== null) defaultBlock += `\n    endpoint: ${endpoint}`;
+
+  // Replace the three required lines in the `default:` tier block.
+  // The regex matches from `provider:` through optional `endpoint:` line,
+  // all indented under the `default:` stanza.
+  return template.replace(
+    /^( {4}provider:[ \t]*\S+\n {4}model:[ \t]*\S+\n(?:[ \t]*endpoint:[ \t]*\S+\n)?)/m,
+    defaultBlock + '\n',
+  );
+}
 
 async function ollamaReachable() {
   try {
@@ -82,9 +114,8 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   // Step 5-7: write config files from templates
   const root_plugin = pluginRoot(import.meta.url, env);
   const repoTemplate = await readFileOrNull(join(root_plugin, 'templates/config-repo.yaml'))
-    ?? `version: "0.1"\nprovider:\n  active: ${chosen}\n`;
-  // Inject active provider into the repo template if it's the default.
-  const repoConfig = repoTemplate.replace(/provider:\s*\n\s*active:\s*\w[\w-]*/, `provider:\n  active: ${chosen}`);
+    ?? `version: "0.1"\ntiers:\n  default:\n    provider: ollama\n    model: qwen2.5-coder:7b\n    endpoint: http://localhost:11434\n`;
+  const repoConfig = injectDefaultTier(repoTemplate, chosen, env);
   await writeAtomic(join(autoreview, 'config.yaml'), repoConfig);
 
   // §24: auto-pull declared remote sources so the first review run has a cache.

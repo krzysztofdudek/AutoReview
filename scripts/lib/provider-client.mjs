@@ -41,29 +41,31 @@ function getOrCreateSemaphore(name, max) {
   return sem;
 }
 
-export function getProvider(config, { ruleProvider, ruleModel } = {}) {
-  const name = ruleProvider ?? config.provider.active;
-  if (!FACTORIES[name]) throw new Error(`unknown provider: ${name}. Known: ${Object.keys(FACTORIES).join(', ')}`);
-  const provCfg = config.provider[name] ?? {};
-  const model = ruleModel ?? provCfg.model;
-  const endpoint = provCfg.endpoint;
-  const apiKey = config.secrets?.[name]?.api_key ?? '';
-  const key = `${name}|${model}|${endpoint ?? ''}|${apiKey ? 'K' : ''}`;
-  if (CACHE.has(key)) return CACHE.get(key);
-  const factoryArgs = { model, apiKey };
-  const epKey = ENDPOINT_KEY[name];
-  if (epKey && endpoint) factoryArgs[epKey] = endpoint;
-  if (Number.isInteger(provCfg.timeout_ms) && provCfg.timeout_ms > 0) factoryArgs.timeoutMs = provCfg.timeout_ms;
-  const raw = FACTORIES[name](factoryArgs);
-  const max = Number.isInteger(provCfg.parallel) && provCfg.parallel >= 1 ? provCfg.parallel : 1;
-  // Per-provider semaphore lives at the provider name granularity (not per cache key) — the
-  // upstream rate-limit is per-account, not per-model.
-  const sem = getOrCreateSemaphore(name, max);
+export function getProvider(config, { tierName = 'default' } = {}) {
+  const tier = config.tiers?.[tierName];
+  if (!tier) {
+    throw new Error(`tier '${tierName}' not defined in tiers: in .autoreview/config.yaml`);
+  }
+  if (!FACTORIES[tier.provider]) {
+    throw new Error(`unknown provider '${tier.provider}' in tier ${tierName}. Known: ${Object.keys(FACTORIES).join(', ')}`);
+  }
+  const apiKey = config.secrets?.[tier.provider]?.api_key ?? '';
+  const cacheKey = `${tierName}|${tier.provider}|${tier.model}|${tier.endpoint ?? ''}|${apiKey ? 'K' : ''}`;
+  if (CACHE.has(cacheKey)) return CACHE.get(cacheKey);
+
+  const factoryArgs = { model: tier.model, apiKey };
+  const epKey = ENDPOINT_KEY[tier.provider];
+  if (epKey && tier.endpoint) factoryArgs[epKey] = tier.endpoint;
+  if (Number.isInteger(tier.timeout_ms) && tier.timeout_ms > 0) factoryArgs.timeoutMs = tier.timeout_ms;
+  const raw = FACTORIES[tier.provider](factoryArgs);
+
+  const max = Number.isInteger(tier.parallel) && tier.parallel >= 1 ? tier.parallel : 1;
+  const sem = getOrCreateSemaphore(tierName, max);
   const wrapped = {
     ...raw,
     verify: (prompt, opts) => sem.run(() => raw.verify(prompt, opts)),
   };
-  CACHE.set(key, wrapped);
+  CACHE.set(cacheKey, wrapped);
   return wrapped;
 }
 

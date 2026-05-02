@@ -21,15 +21,15 @@ function validateRelativePath(relativePath) {
 
 function escapeDouble(str) { return str.replace(/"/g, '\\"'); }
 
-export function renderRule({ name, triggers, intent, description, provider, model, body }) {
+export function renderRule({ name, triggers, tier, severity, type, description, body }) {
   const fm = [
     `name: "${escapeDouble(name)}"`,
     `triggers: '${triggers.replace(/'/g, "''")}'`,
   ];
-  if (intent) fm.push(`intent: "${escapeDouble(intent)}"`);
+  if (tier) fm.push(`tier: ${tier}`);
+  if (severity) fm.push(`severity: ${severity}`);
+  if (type) fm.push(`type: ${type}`);
   if (description) fm.push(`description: "${escapeDouble(description)}"`);
-  if (provider) fm.push(`provider: ${provider}`);
-  if (model) fm.push(`model: ${model}`);
   return `---\n${fm.join('\n')}\n---\n${body}\n`;
 }
 

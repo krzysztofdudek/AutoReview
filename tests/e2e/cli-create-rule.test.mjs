@@ -1,5 +1,4 @@
-// tests/e2e/cli-create-rule.test.mjs — create-rule {save, breadth, test-drive, intent-test}.
-// test-drive and intent-test exercise the LLM; covered separately once server is confirmed up.
+// tests/e2e/cli-create-rule.test.mjs — create-rule {save, breadth, test-drive}.
 // Focus here: `save` and `breadth` subcommands (no LLM) + CLI surface.
 
 import { test } from 'node:test';
@@ -176,7 +175,7 @@ test('C-test-drive + test-drive runs ephemeral rule against sample files', async
   try {
     // Unreachable provider → verdict must be "error" (deterministic, no LLM).
     await env.writeConfig({
-      provider: { active: 'openai-compat', 'openai-compat': { endpoint: 'http://127.0.0.1:1', model: 'x' } },
+      tiers: { default: { provider: 'openai-compat', model: 'x', endpoint: 'http://127.0.0.1:1' } },
     });
     await env.write('body.md', 'Rule body');
     await env.write('a.ts', 'x');
@@ -225,37 +224,6 @@ test('C-test-drive-unreadable - unreadable files logged with "unreadable" error'
     ], { stub: 'pass' });
     assert.equal(r.code, 0);
     const parsed = JSON.parse(r.stdout);
-    assert.equal(parsed[0].error, 'unreadable');
-  } finally { await env.cleanup(); }
-});
-
-test('C-intent-test-missing - intent-test requires --intent + --files', async (t) => {
-  skipUnlessE2E(t);
-  const env = await createEnv('cr');
-  try {
-    await env.writeConfig();
-    const r = await env.run('create-rule', ['intent-test', '--intent', 'does it?']);
-    assert.equal(r.code, 1);
-    assert.match(r.stderr, /intent-test requires/);
-  } finally { await env.cleanup(); }
-});
-
-test('C-intent-test-unreadable - unreadable sample files flagged "unreadable"', async (t) => {
-  skipUnlessE2E(t);
-  const env = await createEnv('cr');
-  try {
-    // Point provider at dead port so no real call succeeds — we only exercise the unreadable branch.
-    await env.writeConfig({
-      provider: { active: 'openai-compat', 'openai-compat': { endpoint: 'http://127.0.0.1:1', model: 'x' } },
-    });
-    const r = await env.run('create-rule', [
-      'intent-test',
-      '--intent', 'does anything',
-      '--files', '/does/not/exist-' + Date.now() + '.ts',
-    ]);
-    assert.equal(r.code, 0);
-    const parsed = JSON.parse(r.stdout);
-    assert.equal(parsed[0].match, false);
     assert.equal(parsed[0].error, 'unreadable');
   } finally { await env.cleanup(); }
 });

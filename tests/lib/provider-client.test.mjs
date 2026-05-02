@@ -1,123 +1,68 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getProvider, clearProviderCache } from '../../scripts/lib/provider-client.mjs';
-import { DEFAULT_CONFIG } from '../../scripts/lib/config-loader.mjs';
+import { getProvider, clearProviderCache, _SEMAPHORES } from '../../scripts/lib/provider-client.mjs';
 
-test('default active = ollama', () => {
-  clearProviderCache();
-  const p = getProvider(DEFAULT_CONFIG, {});
-  assert.equal(p.name, 'ollama');
-});
-
-test('per-rule provider overrides active', () => {
-  clearProviderCache();
-  const cfg = { ...DEFAULT_CONFIG, secrets: { anthropic: { api_key: 'sk-test' } } };
-  const p = getProvider(cfg, { ruleProvider: 'anthropic' });
-  assert.equal(p.name, 'anthropic');
-  assert.equal(p.model, DEFAULT_CONFIG.provider.anthropic.model);
-});
-
-test('per-rule model overrides default', () => {
-  clearProviderCache();
-  const p = getProvider(DEFAULT_CONFIG, { ruleModel: 'qwen2.5-coder:14b' });
-  assert.equal(p.model, 'qwen2.5-coder:14b');
-});
-
-test('unknown provider name throws', () => {
-  clearProviderCache();
-  assert.throws(() => getProvider(DEFAULT_CONFIG, { ruleProvider: 'nope' }), /unknown provider/i);
-});
-
-test('instances memoized across calls with same key', () => {
-  clearProviderCache();
-  const p1 = getProvider(DEFAULT_CONFIG, {});
-  const p2 = getProvider(DEFAULT_CONFIG, {});
-  assert.equal(p1, p2);
-});
-
-test('custom anthropic endpoint passed through to provider', () => {
+test('getProvider dispatches by tierName', () => {
   clearProviderCache();
   const cfg = {
-    ...DEFAULT_CONFIG,
-    provider: {
-      ...DEFAULT_CONFIG.provider,
-      anthropic: { model: 'claude-haiku-4-5', endpoint: 'https://proxy.example.com/v1/messages' },
+    tiers: {
+      default: { provider: 'ollama', model: 'qwen', endpoint: 'http://x', parallel: 1, timeout_ms: 60000 },
+      critical: { provider: 'anthropic', model: 'claude-opus-4-7', parallel: 4, timeout_ms: 180000 },
     },
     secrets: { anthropic: { api_key: 'sk-test' } },
   };
-  const p = getProvider(cfg, { ruleProvider: 'anthropic' });
+  const p = getProvider(cfg, { tierName: 'critical' });
   assert.equal(p.name, 'anthropic');
-  // Constructing with a custom URL should not throw
+  assert.equal(p.model, 'claude-opus-4-7');
 });
 
-test('unknown provider error lists known values', () => {
-  clearProviderCache();
-  assert.throws(
-    () => getProvider(DEFAULT_CONFIG, { ruleProvider: 'nope' }),
-    /unknown provider: nope\. Known: ollama/,
-  );
-});
-
-test('getProvider returns wrapped provider whose verify() is a function', async () => {
+test('getProvider defaults to default tier when tierName omitted', () => {
   clearProviderCache();
   const cfg = {
-    ...DEFAULT_CONFIG,
-    provider: { ...DEFAULT_CONFIG.provider, ollama: { ...DEFAULT_CONFIG.provider.ollama, parallel: 2 } },
-  };
-  const p = getProvider(cfg, {});
-  assert.equal(p.name, 'ollama');
-  assert.equal(typeof p.verify, 'function');
-});
-
-test('same provider name across cache entries shares one Semaphore (via _SEMAPHORES export)', async () => {
-  const { _SEMAPHORES } = await import('../../scripts/lib/provider-client.mjs');
-  clearProviderCache();
-  const cfg = {
-    ...DEFAULT_CONFIG,
-    provider: { ...DEFAULT_CONFIG.provider, anthropic: { ...DEFAULT_CONFIG.provider.anthropic, parallel: 7 } },
-    secrets: { anthropic: { api_key: 'k' } },
-  };
-  getProvider(cfg, { ruleProvider: 'anthropic', ruleModel: 'm-A' });
-  getProvider(cfg, { ruleProvider: 'anthropic', ruleModel: 'm-B' });
-  assert.equal(_SEMAPHORES.size, 1);
-  assert.equal(_SEMAPHORES.get('anthropic').max, 7);
-});
-
-test('different provider names create independent Semaphores (via _SEMAPHORES export)', async () => {
-  const { _SEMAPHORES } = await import('../../scripts/lib/provider-client.mjs');
-  clearProviderCache();
-  const cfg = {
-    ...DEFAULT_CONFIG,
-    provider: {
-      ...DEFAULT_CONFIG.provider,
-      anthropic: { ...DEFAULT_CONFIG.provider.anthropic, parallel: 2 },
-      openai: { ...DEFAULT_CONFIG.provider.openai, parallel: 4 },
+    tiers: {
+      default: { provider: 'ollama', model: 'qwen', endpoint: 'http://x', parallel: 1, timeout_ms: 60000 },
     },
-    secrets: { anthropic: { api_key: 'k' }, openai: { api_key: 'k' } },
+    secrets: {},
   };
-  getProvider(cfg, { ruleProvider: 'anthropic' });
-  getProvider(cfg, { ruleProvider: 'openai' });
-  assert.equal(_SEMAPHORES.size, 2);
-  assert.equal(_SEMAPHORES.get('anthropic').max, 2);
-  assert.equal(_SEMAPHORES.get('openai').max, 4);
+  const p = getProvider(cfg);
+  assert.equal(p.name, 'ollama');
+  assert.equal(p.model, 'qwen');
 });
 
-test('clearProviderCache resets _SEMAPHORES too', async () => {
-  const { _SEMAPHORES } = await import('../../scripts/lib/provider-client.mjs');
+test('getProvider throws on undefined tier', () => {
   clearProviderCache();
-  const cfg = { ...DEFAULT_CONFIG, secrets: { anthropic: { api_key: 'k' } } };
-  getProvider(cfg, { ruleProvider: 'anthropic' });
-  assert.equal(_SEMAPHORES.size, 1);
-  clearProviderCache();
-  assert.equal(_SEMAPHORES.size, 0);
+  const cfg = { tiers: { default: { provider: 'ollama', model: 'm', endpoint: 'http://x', parallel: 1 } }, secrets: {} };
+  assert.throws(() => getProvider(cfg, { tierName: 'critical' }),
+    /tier 'critical' not defined in tiers: in \.autoreview\/config\.yaml/);
 });
 
-test('getProvider reads parallel from cfg.provider[name].parallel; defaults to 1 when absent', async () => {
+test('two tiers on same provider get separate semaphores', () => {
   clearProviderCache();
   const cfg = {
-    ...DEFAULT_CONFIG,
-    provider: { ...DEFAULT_CONFIG.provider, ollama: { endpoint: 'http://localhost:11434', model: 'm' } },
+    tiers: {
+      default: { provider: 'anthropic', model: 'haiku', parallel: 2 },
+      critical: { provider: 'anthropic', model: 'opus', parallel: 4 },
+    },
+    secrets: { anthropic: { api_key: 'sk-test' } },
   };
-  const p = getProvider(cfg, {});
-  assert.equal(p.name, 'ollama');
+  getProvider(cfg, { tierName: 'default' });
+  getProvider(cfg, { tierName: 'critical' });
+  assert.equal(_SEMAPHORES.get('default').max, 2);
+  assert.equal(_SEMAPHORES.get('critical').max, 4);
+});
+
+test('two tiers on same provider create exactly two semaphores keyed by tier name', () => {
+  clearProviderCache();
+  const cfg = {
+    tiers: {
+      default: { provider: 'anthropic', model: 'haiku', parallel: 2 },
+      critical: { provider: 'anthropic', model: 'opus', parallel: 4 },
+    },
+    secrets: { anthropic: { api_key: 'sk-test' } },
+  };
+  getProvider(cfg, { tierName: 'default' });
+  getProvider(cfg, { tierName: 'critical' });
+  assert.equal(_SEMAPHORES.size, 2);
+  assert.ok(_SEMAPHORES.has('default'));
+  assert.ok(_SEMAPHORES.has('critical'));
 });

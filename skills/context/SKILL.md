@@ -19,6 +19,24 @@ Skip only when no rules exist in the repo or the path is in an excluded director
 
 If you need rules by free-text intent instead of by path, use `autoreview:guide` skill (text similarity search) — it filters by relevance, not by trigger.
 
+## Effective frontmatter (post-overlay)
+
+Output shows **effective** frontmatter — remote rules have any `remote_rules[].overrides` entries already merged in.
+
+```
+- corp/audit-log-on-handlers   [manual]
+    tier: trivial   severity: warning   type: manual   read: /path/to/rule.md
+- corp/no-todo-without-ticket
+    tier: standard   severity: error   read: /path/to/rule.md
+- corp/legacy-perf-rule   [invalid: tier 'bogus' unknown] [manual]
+    tier: bogus   severity: error   type: manual   read: /path/to/rule.md
+```
+
+Markers:
+- `[manual]` — rule has `type: manual`; it only runs when explicitly invoked with `--rule <id>`. The pre-commit hook and default `autoreview:review` skip it silently.
+- `[invalid: <reason>]` — rule has a frontmatter value error (unknown tier, unknown severity, etc.). The reviewer emits an `[error]` verdict for every file it matches rather than dispatching to the tier. Fix the rule or its override.
+- Both markers can coexist on one rule.
+
 ## List all rules
 
 If the user wants to see everything defined ("what rules exist?", "show me the rules", "what rules does this project have?"), invoke with no path:
@@ -27,4 +45,4 @@ If the user wants to see everything defined ("what rules exist?", "show me the r
 node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/context.mjs
 ```
 
-Output lists every rule id + its description.
+Output lists every rule id + its effective frontmatter summary.

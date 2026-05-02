@@ -23,25 +23,44 @@ test('renderRule doubles single quotes in triggers', () => {
   assert.match(out, /triggers: 'content:"it''s"'/);
 });
 
-test('renderRule includes optional fields when present', () => {
+test('renderRule emits new frontmatter fields (tier/severity/type)', () => {
   const out = renderRule({
-    name: 'X', triggers: 'dir:"."',
-    intent: 'detect bugs', description: 'desc',
-    provider: 'anthropic', model: 'claude-haiku',
-    body: 'body',
+    name: 'Foo', triggers: 'path:"**/*"',
+    tier: 'heavy', severity: 'warning', type: 'manual',
+    description: 'desc',
+    body: 'check this',
   });
-  assert.match(out, /intent: "detect bugs"/);
+  assert.match(out, /name: "Foo"/);
+  assert.match(out, /triggers: 'path:"\*\*\/\*"'/);
+  assert.match(out, /tier: heavy/);
+  assert.match(out, /severity: warning/);
+  assert.match(out, /type: manual/);
   assert.match(out, /description: "desc"/);
-  assert.match(out, /provider: anthropic/);
-  assert.match(out, /model: claude-haiku/);
+  assert.match(out, /check this/);
 });
 
-test('renderRule omits optional fields when absent', () => {
-  const out = renderRule({ name: 'X', triggers: 'dir:"."', body: '' });
-  assert.doesNotMatch(out, /intent:/);
-  assert.doesNotMatch(out, /description:/);
+test('renderRule does NOT emit removed fields (provider/model/intent)', () => {
+  const out = renderRule({
+    name: 'Foo', triggers: 'path:"x"',
+    tier: 'default', severity: 'error', type: 'auto',
+    body: 'b',
+  });
   assert.doesNotMatch(out, /provider:/);
   assert.doesNotMatch(out, /model:/);
+  assert.doesNotMatch(out, /intent:/);
+});
+
+test('renderRule omits optional fields when not provided', () => {
+  const out = renderRule({ name: 'A', triggers: 'path:"x"', body: 'b' });
+  assert.doesNotMatch(out, /tier:/);
+  assert.doesNotMatch(out, /severity:/);
+  assert.doesNotMatch(out, /type:/);
+  assert.doesNotMatch(out, /description:/);
+});
+
+test('renderRule escapes double quotes in description', () => {
+  const out = renderRule({ name: 'A', triggers: 'path:"x"', description: 'with "marks"', body: 'b' });
+  assert.match(out, /description: "with \\"marks\\"/);
 });
 
 test('saveRule writes file under .autoreview/rules/', async () => {

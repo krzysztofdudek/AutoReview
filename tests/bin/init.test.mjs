@@ -39,7 +39,7 @@ async function mkPluginRoot() {
   await mkdir(join(dir, 'scripts/bin'), { recursive: true });
   const cleanup = () => rm(dir, { recursive: true, force: true });
   // Template files
-  await writeFile(join(dir, 'templates/config-repo.yaml'), 'version: "0.1"\nprovider:\n  active: ollama\n');
+  await writeFile(join(dir, 'templates/config-repo.yaml'), 'version: "0.1"\ntiers:\n  default:\n    provider: ollama\n    model: qwen2.5-coder:7b\n    endpoint: http://localhost:11434\n');
   await writeFile(join(dir, 'templates/config-personal.yaml'), '# personal\n');
   await writeFile(join(dir, 'templates/config-secrets.yaml'), '# secrets\n');
   await writeFile(join(dir, 'templates/example-rule.md'), '---\nname: "Example"\ntriggers: \'path:"**"\'\n---\nbody');
@@ -203,7 +203,7 @@ test('init auto-pulls remote_rules declared in template', async () => {
 
   // Replace the plugin's config-repo.yaml template to declare a remote source
   await writeFile(join(pluginDir, 'templates/config-repo.yaml'),
-    `version: "0.1"\nprovider:\n  active: ollama\nremote_rules:\n  - name: shared\n    url: "${remoteDir}"\n    ref: v1\n    path: rules\n`);
+    `version: "0.1"\ntiers:\n  default:\n    provider: ollama\n    model: qwen2.5-coder:7b\n    endpoint: http://localhost:11434\nremote_rules:\n  - name: shared\n    url: "${remoteDir}"\n    ref: v1\n    path: rules\n`);
 
   try {
     const c = capture();

@@ -1,6 +1,6 @@
 ---
 name: history
-description: Use when the user asks about review verdicts over time — "what's been getting rejected", "rejection rate this week", "show recent reviews", "history of verdicts", "which rule fails most often", "show suppressed reviews", or filtering reviews by rule / file / date / verdict. Zero LLM cost — pure read of stored review records. Skip when the user wants a FRESH verdict (use autoreview:review) or when no `.autoreview/` exists (use autoreview:setup first).
+description: Use when the user asks about review verdicts over time — "what's been getting rejected", "rejection rate this week", "show recent reviews", "history of verdicts", "which rule fails most often", "show suppressed reviews", or filtering reviews by rule / file / date / verdict / tier / severity. Zero LLM cost — pure read of stored review records. Skip when the user wants a FRESH verdict (use autoreview:review) or when no `.autoreview/` exists (use autoreview:setup first).
 ---
 
 # AutoReview History
@@ -23,14 +23,22 @@ Prints total record count, verdicts grouped by type, by rule, and the 10 most re
 - `--verdict pass|fail|error|suppressed` — narrow to a single outcome.
 - `--file '<glob>'` — glob filter on file paths (e.g. `--file 'src/api/**'`).
 - `--since YYYY-MM-DD --until YYYY-MM-DD` — date range. Either end is optional.
+- `--tier <name>` — filter to records where the rule ran on a specific tier (e.g. `--tier critical`). Useful for auditing what the heavy reviewer is catching.
+- `--severity <error|warning>` — filter to records where the rule's severity matches. Useful for `--severity warning` to review non-blocking findings separately.
 
-Combine freely: `--rule auth/no-direct-db --verdict fail --since 2026-04-01`.
+Combine freely: `--rule auth/no-direct-db --verdict fail --since 2026-04-01 --tier critical`.
 
 ## Output formats
 
 - `--format table` (default) — aggregates + the 10 most recent.
 - `--format json` — single JSON object: `{ total, by_verdict, by_rule, records }`. Good for "give me the totals as JSON".
 - `--format jsonl` — one record per line, raw. Pipe through `jq` (POSIX) / parse with `node -e "for await (const line of process.stdin) ..."` (cross-platform) for custom queries.
+
+## Record fields
+
+Each record includes: `rule`, `verdict`, `reason`, `provider`, `model`, `mode`, `duration_ms`, `usage`, `actor`, `host`, `commit_sha`, plus two fields added in the tier redesign:
+- `tier` — the tier that handled the rule (effective post-overlay).
+- `severity` — the rule's severity at run time (effective post-overlay).
 
 ## Storage layout
 

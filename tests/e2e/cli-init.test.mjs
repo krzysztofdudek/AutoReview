@@ -24,7 +24,8 @@ test('I1 + fresh repo + --provider openai-compat -> full scaffold', async (t) =>
       assert.ok(env.exists(rel), `missing ${rel}`);
     }
     const cfg = await env.read('.autoreview/config.yaml');
-    assert.match(cfg, /active:\s*openai-compat/);
+    // New schema: tiers.default.provider instead of provider.active
+    assert.match(cfg, /provider:\s*openai-compat/);
   } finally { await env.cleanup(); }
 });
 
@@ -67,7 +68,8 @@ test('I4 + --upgrade rewrites config but preserves user rules', async (t) => {
     assert.equal(r2.code, 0);
     assert.ok(env.exists('.autoreview/rules/mine.md'), 'user rule deleted');
     const cfg = await env.read('.autoreview/config.yaml');
-    assert.match(cfg, /active:\s*ollama/);
+    // New schema: tiers.default.provider instead of provider.active
+    assert.match(cfg, /provider:\s*ollama/);
   } finally { await env.cleanup(); }
 });
 

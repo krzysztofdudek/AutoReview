@@ -12,23 +12,29 @@ const SUBCOMMANDS = {
   context: () => import('./context.mjs'),
   guide: () => import('./guide.mjs'),
   'pull-remote': () => import('./pull-remote.mjs'),
+  'override-rule': () => import('./override-rule.mjs'),
   'reviewer-test': () => import('./reviewer-test.mjs'),
   history: () => import('./history.mjs'),
 };
 
 export async function run(argv, ctx) {
-  const [sub, ...rest] = argv;
-  if (!sub || sub === '--help' || sub === '-h') {
-    ctx.stdout.write(`autoreview <subcommand> [args]\n\nSubcommands:\n  ${Object.keys(SUBCOMMANDS).join('\n  ')}\n`);
-    return 0;
+  try {
+    const [sub, ...rest] = argv;
+    if (!sub || sub === '--help' || sub === '-h') {
+      ctx.stdout.write(`autoreview <subcommand> [args]\n\nSubcommands:\n  ${Object.keys(SUBCOMMANDS).join('\n  ')}\n`);
+      return 0;
+    }
+    const loader = SUBCOMMANDS[sub];
+    if (!loader) {
+      ctx.stderr.write(`[error] unknown subcommand: ${sub}\n`);
+      return 1;
+    }
+    const mod = await loader();
+    return mod.run(rest, ctx);
+  } catch (err) {
+    ctx.stderr.write(`[error] internal: ${err.stack ?? err.message ?? String(err)}\n`);
+    return 2;
   }
-  const loader = SUBCOMMANDS[sub];
-  if (!loader) {
-    ctx.stderr.write(`[error] unknown subcommand: ${sub}\n`);
-    return 1;
-  }
-  const mod = await loader();
-  return mod.run(rest, ctx);
 }
 
 if (isMainModule(import.meta.url)) {

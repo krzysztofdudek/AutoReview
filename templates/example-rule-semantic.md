@@ -1,6 +1,8 @@
 ---
 name: "Example — Audit log on state-mutating handlers"
 triggers: '(dir:"src/api" OR dir:"src/handlers") AND content:"export\\s+(async\\s+)?function"'
+tier: heavy
+severity: error
 description: "Every handler that mutates persistent state must emit an audit-log entry before returning."
 ---
 Check every exported function in `src/api/` or `src/handlers/` that mutates persistent state (writes to a database, calls an external service that changes state, enqueues a job). Mutating handlers must emit an audit-log entry BEFORE returning.

@@ -4,7 +4,10 @@
 // Unsupported (throws): anchors (&), aliases (*), tags (!!), folded (>), multi-document (---).
 
 export class YamlError extends Error {
-  constructor(msg, line) { super(`${msg} (line ${line})`); this.line = line; }
+  constructor(msg, line) {
+    super(line >= 0 ? `${msg} (line ${line})` : msg);
+    this.line = line;
+  }
 }
 
 const UNSUPPORTED = /^[*&!]|^>\s*$/;

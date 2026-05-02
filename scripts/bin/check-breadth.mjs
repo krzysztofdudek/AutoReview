@@ -28,7 +28,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     root = await repoRoot(cwd);
     cfg = await loadConfig(root, { env }).catch(() => DEFAULT_CONFIG);
   } catch { root = cwd; }
-  const walkCap = cfg.review?.walk_file_cap ?? 10000;
+  const walkCap = 10000;
 
   if (values.expr) expr = values.expr;
   else if (values.rule) {

@@ -1,6 +1,8 @@
 ---
 name: "Example — No TODO without ticket ID"
 triggers: 'path:"**/*.{ts,js,py,go}" AND content:"TODO"'
+tier: trivial
+severity: warning
 description: "TODO comments should reference a ticket id so follow-up is traceable"
 ---
 Every `TODO` comment must reference a ticket id, e.g. `TODO(PROJ-123):`.

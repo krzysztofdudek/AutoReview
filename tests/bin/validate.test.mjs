@@ -1,9 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, mkdir, rm, stat, readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile, mkdir, stat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { run } from '../../scripts/bin/validate.mjs';
 import { makeRepo } from '../lib/git-helpers.mjs';
 
@@ -21,7 +19,8 @@ test('internal crash in validate context exits 2 (3-state spec §28)', async () 
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
     await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
     await writeFile(join(dir, 'a.ts'), 'x');
     git('add', 'a.ts');
@@ -49,8 +48,9 @@ test('hard context: failed rule -> exit 1', async () => {
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
-    await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
+    await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\nseverity: error\n---\nbody`);
     await writeFile(join(dir, 'a.ts'), 'x');
     git('add', 'a.ts');
     const streams = captureStreams();
@@ -62,28 +62,30 @@ test('hard context: failed rule -> exit 1', async () => {
   } finally { await cleanup(); }
 });
 
-test('soft precommit: failed rule -> exit 0 with [reject]', async () => {
+test('warning-severity: failed rule -> exit 0 with [warn]', async () => {
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  precommit: soft\n');
-    await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
+    await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\nseverity: warning\n---\nbody`);
     await writeFile(join(dir, 'a.ts'), 'x');
     git('add', 'a.ts');
     const streams = captureStreams();
-    const code = await run(['--scope', 'staged', '--context', 'precommit'], {
+    const code = await run(['--scope', 'staged'], {
       cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'fail' }, ...streams,
     });
     assert.equal(code, 0);
-    assert.match(streams.err(), /\[reject\]/);
+    assert.match(streams.err(), /\[warn\]/);
   } finally { await cleanup(); }
 });
 
-test('precommit forces consensus=1', async () => {
+test('precommit honours tier consensus (no global cap)', async () => {
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'review:\n  consensus: 3\nenforcement:\n  precommit: soft\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n    consensus: 3\n');
     await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
     await writeFile(join(dir, 'a.ts'), 'x');
     git('add', 'a.ts');
@@ -99,7 +101,8 @@ test('stub pass: exit 0 with [pass]', async () => {
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
     await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
     await writeFile(join(dir, 'a.ts'), 'x');
     git('add', 'a.ts');
@@ -112,12 +115,31 @@ test('stub pass: exit 0 with [pass]', async () => {
   } finally { await cleanup(); }
 });
 
-test('stub error in validate (hard) context exits 0 with [error] (spec §22 soft-fail on provider error)', async () => {
+test('stub error on severity:error rule exits 1 with [error] (spec §5 exit policy)', async () => {
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
-    await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
+    await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\nseverity: error\n---\nbody`);
+    await writeFile(join(dir, 'a.ts'), 'x');
+    git('add', 'a.ts');
+    const streams = captureStreams();
+    const code = await run(['--scope', 'staged'], {
+      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'error' }, ...streams,
+    });
+    assert.equal(code, 1);
+    assert.match(streams.err(), /\[error\]/);
+  } finally { await cleanup(); }
+});
+
+test('stub error on severity:warning rule exits 0 with [error]', async () => {
+  const { dir, run: git, cleanup } = await makeRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
+    await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\nseverity: warning\n---\nbody`);
     await writeFile(join(dir, 'a.ts'), 'x');
     git('add', 'a.ts');
     const streams = captureStreams();
@@ -129,28 +151,12 @@ test('stub error in validate (hard) context exits 0 with [error] (spec §22 soft
   } finally { await cleanup(); }
 });
 
-test('stub error in precommit (soft) context exits 0 with [error]', async () => {
-  const { dir, run: git, cleanup } = await makeRepo();
-  try {
-    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  precommit: soft\n');
-    await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
-    await writeFile(join(dir, 'a.ts'), 'x');
-    git('add', 'a.ts');
-    const streams = captureStreams();
-    const code = await run(['--scope', 'staged', '--context', 'precommit'], {
-      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'error' }, ...streams,
-    });
-    assert.equal(code, 0);
-    assert.match(streams.err(), /\[error\]/);
-  } finally { await cleanup(); }
-});
-
 test('validate --content-file + --target-path runs reviewer on hypothetical content (§15)', async () => {
   const { dir, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
     await writeFile(join(dir, '.autoreview/rules/r.md'),
       `---\nname: R\ntriggers: 'path:"src/api/**/*.ts"'\n---\nbody`);
     const draft = join(dir, 'draft.txt');
@@ -170,7 +176,7 @@ test('validate warns when declared remote source is not cached', async () => {
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
     await writeFile(join(dir, '.autoreview/config.yaml'),
-      'remote_rules:\n  - name: missing\n    url: "http://nowhere"\n    ref: v1\n    path: .\n');
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\nremote_rules:\n  - name: missing\n    url: "http://nowhere"\n    ref: v1\n    path: .\n');
     await writeFile(join(dir, 'a.ts'), 'x');
     git('add', 'a.ts');
     const streams = captureStreams();
@@ -182,87 +188,45 @@ test('validate warns when declared remote source is not cached', async () => {
   } finally { await cleanup(); }
 });
 
-test('validate auto-pulls remote when remote_rules_auto_pull: true (§24)', async () => {
-  const { dir, cleanup } = await makeRepo();
-  // Create a fake local git remote with rules
-  const remoteDir = await mkdtemp(join(tmpdir(), 'ar-vt-remote-'));
-  spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: remoteDir });
-  spawnSync('git', ['config', 'user.email', 't@t'], { cwd: remoteDir });
-  spawnSync('git', ['config', 'user.name', 't'], { cwd: remoteDir });
-  await mkdir(join(remoteDir, 'rules'), { recursive: true });
-  await writeFile(join(remoteDir, 'rules/r.md'), '---\nname: R\ntriggers: \'path:"**"\'\n---\nbody');
-  spawnSync('git', ['add', '.'], { cwd: remoteDir });
-  spawnSync('git', ['commit', '-q', '-m', 'init'], { cwd: remoteDir });
-  spawnSync('git', ['tag', 'v1'], { cwd: remoteDir });
-  try {
-    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'),
-      `review:\n  remote_rules_auto_pull: true\nremote_rules:\n  - name: shared\n    url: "${remoteDir}"\n    ref: v1\n    path: rules\n`);
-    const streams = captureStreams();
-    const code = await run([], {
-      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'pass' }, ...streams,
-    });
-    assert.equal(code, 0);
-    assert.match(streams.err(), /auto-pulling remote 'shared@v1'/);
-    // sentinel should exist after auto-pull
-    await stat(join(dir, '.autoreview/remote_rules/shared/v1/.autoreview-managed'));
-  } finally {
-    await cleanup();
-    await rm(remoteDir, { recursive: true, force: true });
-  }
-});
 
-test('soft mode with rejects prints informational gate message (§17)', async () => {
-  const { dir, run: git, cleanup } = await makeRepo();
-  try {
-    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  precommit: soft\n');
-    await writeFile(join(dir, '.autoreview/rules/r.md'),
-      `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
-    await writeFile(join(dir, 'a.ts'), 'x');
-    git('add', 'a.ts');
-    const streams = captureStreams();
-    const code = await run(['--scope', 'staged', '--context', 'precommit'], {
-      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'fail' }, ...streams,
-    });
-    assert.equal(code, 0);
-    assert.match(streams.err(), /would have blocked under hard enforcement/i);
-  } finally { await cleanup(); }
-});
 
-test('stub error in validate hard context exits 0 (spec §22 soft-fail on provider error)', async () => {
-  const { dir, run: git, cleanup } = await makeRepo();
-  try {
-    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
-    await writeFile(join(dir, '.autoreview/rules/r.md'),
-      `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
-    await writeFile(join(dir, 'a.ts'), 'x');
-    git('add', 'a.ts');
-    const streams = captureStreams();
-    const code = await run(['--scope', 'staged'], {
-      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'error' }, ...streams,
-    });
-    assert.equal(code, 0);
-    assert.match(streams.err(), /\[error\]/);
-  } finally { await cleanup(); }
-});
 
 test('precommit quick mode with reject prints debug hint', async () => {
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  precommit: soft\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
     await writeFile(join(dir, '.autoreview/rules/r.md'),
-      `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
+      `---\nname: R\ntriggers: 'path:"**/*.ts"'\nseverity: error\n---\nbody`);
     await writeFile(join(dir, 'a.ts'), 'x');
     git('add', 'a.ts');
     const streams = captureStreams();
     const code = await run(['--scope', 'staged', '--context', 'precommit'], {
       cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'fail' }, ...streams,
     });
-    assert.equal(code, 0);
-    assert.match(streams.err(), /\[hint\].*thinking/i);
+    assert.equal(code, 1);
+    assert.match(streams.err(), /\[hint\]/i);
+    assert.match(streams.err(), /thinking/i);
+  } finally { await cleanup(); }
+});
+
+test('precommit thinking mode with reject does NOT print debug hint', async () => {
+  const { dir, run: git, cleanup } = await makeRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n    mode: thinking\n');
+    await writeFile(join(dir, '.autoreview/rules/r.md'),
+      `---\nname: R\ntriggers: 'path:"**/*.ts"'\nseverity: error\n---\nbody`);
+    await writeFile(join(dir, 'a.ts'), 'x');
+    git('add', 'a.ts');
+    const streams = captureStreams();
+    const code = await run(['--scope', 'staged', '--context', 'precommit'], {
+      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'fail' }, ...streams,
+    });
+    assert.equal(code, 1);
+    assert.doesNotMatch(streams.err(), /\[hint\]/i);
   } finally { await cleanup(); }
 });
 
@@ -271,7 +235,7 @@ test('parallel fan-out: 5 files × 4 rules = 20 verdicts at parallel: 5 (spec §
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
     await writeFile(join(dir, '.autoreview/config.yaml'),
-      'enforcement:\n  validate: hard\nprovider:\n  ollama:\n    parallel: 5\n');
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n    parallel: 5\n');
     for (let r = 0; r < 4; r++) {
       await writeFile(join(dir, `.autoreview/rules/r${r}.md`),
         `---\nname: R${r}\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
@@ -302,7 +266,8 @@ test('file matching zero rules emits empty file-summary', async () => {
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
     await writeFile(join(dir, '.autoreview/rules/r.md'), `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
     await writeFile(join(dir, 'README.md'), 'docs');
     git('add', 'README.md');
@@ -325,7 +290,8 @@ test('large run prints [info] cost warning when pairs × consensus > 100', async
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
     for (let r = 0; r < 11; r++) {
       await writeFile(join(dir, `.autoreview/rules/r${r}.md`),
         `---\nname: R${r}\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
@@ -347,7 +313,8 @@ test('small run does NOT print [info] cost warning', async () => {
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
     await writeFile(join(dir, '.autoreview/rules/r.md'),
       `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
     await writeFile(join(dir, 'a.ts'), 'x');
@@ -360,47 +327,14 @@ test('small run does NOT print [info] cost warning', async () => {
   } finally { await cleanup(); }
 });
 
-test('intent_triggers + parallel > 1 emits [warn] at startup (spec §E.2 risk row 6)', async () => {
-  const { dir, run: git, cleanup } = await makeRepo();
-  try {
-    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'),
-      'review:\n  intent_triggers: true\nprovider:\n  ollama:\n    parallel: 4\n');
-    await writeFile(join(dir, '.autoreview/rules/r.md'),
-      `---\nname: R\ntriggers: 'path:"**/*.ts"'\nintent: handler\n---\nbody`);
-    await writeFile(join(dir, 'a.ts'), 'x');
-    git('add', 'a.ts');
-    const streams = captureStreams();
-    await run(['--scope', 'staged'], {
-      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'pass' }, ...streams,
-    });
-    assert.match(streams.err(), /\[warn\].*intent_triggers.*parallel.*budget/i);
-  } finally { await cleanup(); }
-});
 
-test('intent_triggers + parallel: 1 does NOT emit the warning', async () => {
-  const { dir, run: git, cleanup } = await makeRepo();
-  try {
-    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'),
-      'review:\n  intent_triggers: true\nprovider:\n  ollama:\n    parallel: 1\n');
-    await writeFile(join(dir, '.autoreview/rules/r.md'),
-      `---\nname: R\ntriggers: 'path:"**/*.ts"'\nintent: handler\n---\nbody`);
-    await writeFile(join(dir, 'a.ts'), 'x');
-    git('add', 'a.ts');
-    const streams = captureStreams();
-    await run(['--scope', 'staged'], {
-      cwd: dir, env: { ...process.env, AUTOREVIEW_STUB_PROVIDER: 'pass' }, ...streams,
-    });
-    assert.doesNotMatch(streams.err(), /intent_triggers.*parallel/);
-  } finally { await cleanup(); }
-});
 
 test('Promise.all wrapped in try/finally — historySession.close runs (spec §E.1.5, §F.1 Ctrl-C)', async () => {
   const { dir, run: git, cleanup } = await makeRepo();
   try {
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
     await writeFile(join(dir, '.autoreview/rules/r.md'),
       `---\nname: R\ntriggers: 'path:"**/*.ts"'\n---\nbody`);
     await writeFile(join(dir, 'a.ts'), 'x');
@@ -425,7 +359,8 @@ test('benchmark §F.3.4: parallel:10 vs parallel:1 over 100 pairs ≥ 5× speedu
   const setup = async () => {
     const { dir, run: git, cleanup } = await makeRepo();
     await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'enforcement:\n  validate: hard\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: stub\n    endpoint: http://localhost:11434\n');
     for (let r = 0; r < 5; r++) {
       await writeFile(join(dir, `.autoreview/rules/r${r}.md`),
         `---\nname: R${r}\ntriggers: 'path:"**/*.ts"'\n---\nbody`);

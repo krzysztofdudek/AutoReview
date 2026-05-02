@@ -62,20 +62,18 @@ export async function createEnv(tag, { noGit = false } = {}) {
 
     async writeConfig(overrides = {}) {
       const cfg = {
-        provider: {
-          active: 'openai-compat',
-          'openai-compat': { endpoint: SERVER_ENDPOINT, model: SERVER_MODEL },
-          ollama: { endpoint: 'http://localhost:11434', model: 'gemma4:e4b' },
+        version: '0.1',
+        tiers: {
+          default: {
+            provider: 'openai-compat',
+            model: SERVER_MODEL,
+            endpoint: SERVER_ENDPOINT,
+            parallel: 1,
+            mode: 'quick',
+            consensus: 1,
+          },
         },
-        review: {
-          evaluate: 'full',
-          mode: 'quick',
-          consensus: 1,
-          context_window_bytes: 'auto',
-          output_reserve_bytes: 2000,
-          walk_file_cap: 10000,
-        },
-        enforcement: { precommit: 'soft', validate: 'hard' },
+        remote_rules: [],
         history: { log_to_file: true },
         ...overrides,
       };

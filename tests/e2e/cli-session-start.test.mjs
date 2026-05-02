@@ -57,7 +57,7 @@ test('S4 + anthropic provider without API key -> exit 0, unreachable', async (t)
   const env = await createEnv('ss');
   try {
     await env.writeConfig({
-      provider: { active: 'anthropic', anthropic: { model: 'claude-haiku-4-5' } },
+      tiers: { default: { provider: 'anthropic', model: 'claude-haiku-4-5' } },
     });
     const r = await runHook(env, { ANTHROPIC_API_KEY: '' });
     assert.equal(r.code, 0);
@@ -71,10 +71,7 @@ test('S5 + ollama active + unreachable -> exit 0 with unreachable marker', async
   try {
     // Point ollama at a dead port
     await env.writeConfig({
-      provider: {
-        active: 'ollama',
-        ollama: { endpoint: 'http://127.0.0.1:1', model: 'gemma4:e4b' },
-      },
+      tiers: { default: { provider: 'ollama', model: 'gemma4:e4b', endpoint: 'http://127.0.0.1:1' } },
     });
     const r = await runHook(env);
     assert.equal(r.code, 0);

@@ -22,7 +22,7 @@ export async function run(argv, ctx) {
 async function _run(argv, { cwd, env, stdout, stderr }) {
   const { values } = parseArgs(argv);
   if (!values.rule || !values.file) {
-    stderr.write('[error] usage: reviewer-test --rule <id> --file <path> [--content-file <path>] [--provider <name>] [--model <id>] [--mode quick|thinking]\n');
+    stderr.write('[error] usage: reviewer-test --rule <id> --file <path> [--content-file <path>]\n');
     return 1;
   }
 
@@ -40,16 +40,14 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   const content = await readFile(contentPath, 'utf8').catch(() => null);
   if (content === null) { stderr.write(`[error] cannot read ${rawContentPath}\n`); return 1; }
 
-  const provider = getProvider(cfg, {
-    ruleProvider: values.provider ?? rule.frontmatter.provider,
-    ruleModel: values.model ?? rule.frontmatter.model,
-  });
+  const tierName = rule.frontmatter.tier ?? 'default';
+  const tier = cfg.tiers?.[tierName] ?? cfg.tiers?.default ?? {};
 
-  const mode = values.mode ?? cfg.review.mode;
-  const evaluate = cfg.review.evaluate;
+  const provider = getProvider(cfg, { tierName });
+
   // Always use values.file as the logical path presented to the reviewer.
   const prompt = buildPrompt({
-    rule, file: { path: values.file, content }, diff: null, mode, evaluate,
+    rule, file: { path: values.file, content }, diff: null, mode: tier.mode,
   });
 
   stdout.write(`=== PROVIDER ===\n${provider.name} / ${provider.model}\n\n`);
@@ -58,8 +56,8 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   const start = Date.now();
   const result = await provider.verify(prompt, {
     // 0 = no limit (adapters handle). Config default is 0.
-    maxTokens: cfg.review.output_max_tokens ?? 0,
-    reasoningEffort: cfg.review.reasoning_effort,
+    maxTokens: tier.output_max_tokens ?? 0,
+    reasoningEffort: tier.reasoning_effort,
   });
   const duration = Date.now() - start;
 

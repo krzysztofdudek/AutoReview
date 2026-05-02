@@ -29,7 +29,16 @@ Re-running pull-remote is idempotent and the right way to update:
 
 - With `ref: "v1.2.0"` (a tag) — nothing changes unless the tag has been moved upstream. Bump `ref` in config and re-pull to switch versions.
 - With `ref: "main"` (a branch) — re-running picks up new commits from that branch.
-- Set `review.remote_rules_auto_pull: true` in config to refresh on every `validate` run automatically.
+
+## After fetching — overlay validation
+
+After a successful pull, warn if any `remote_rules[<name>].overrides` entry references a rule id that is not present in the freshly fetched ref:
+
+```
+[warn] override for 'corp-standards/legacy-rule' but rule absent in fetched ref v1.3.0
+```
+
+This means the upstream maintainer removed or renamed a rule you had overridden. The override config is kept (you may re-add the rule upstream or clean up the stale override), but the warning surfaces the drift. Use `autoreview:override-rule` to inspect and clean up stale overrides.
 
 ## Safety mechanisms
 

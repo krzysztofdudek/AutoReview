@@ -1,11 +1,32 @@
 // scripts/lib/rule-loader.mjs
 // Load rules from .autoreview/rules/ (local) and .autoreview/remote_rules/<name>/<ref>/<path>/.
-// Apply disabled + default:disabled filters per config.
 
 import { readFile } from 'node:fs/promises';
 import { relative, join, sep } from 'node:path';
 import { walk } from './fs-utils.mjs';
 import { parse as parseYaml } from './yaml-min.mjs';
+import { ALLOWED_TIER_NAMES } from './config-loader.mjs';
+const VALID_SEVERITIES = new Set(['error', 'warning']);
+const VALID_TYPES = new Set(['auto', 'manual']);
+
+function validateEffectiveFrontmatter(fm) {
+  const errs = [];
+  if (!ALLOWED_TIER_NAMES.includes(fm.tier)) errs.push(`tier '${fm.tier}' unknown (allowed: ${ALLOWED_TIER_NAMES.join(', ')})`);
+  if (!VALID_SEVERITIES.has(fm.severity)) errs.push(`severity '${fm.severity}' unknown (allowed: ${[...VALID_SEVERITIES].join(', ')})`);
+  if (!VALID_TYPES.has(fm.type)) errs.push(`type '${fm.type}' unknown (allowed: ${[...VALID_TYPES].join(', ')})`);
+  return errs.length ? errs.join('; ') : null;
+}
+
+function applyOverlayDefaultsAndValidate(rawFrontmatter, overlay) {
+  const merged = { ...rawFrontmatter, ...overlay };
+  for (const k of Object.keys(merged)) {
+    if (merged[k] === null) delete merged[k];
+  }
+  const fmWithDefaults = { tier: 'default', severity: 'error', type: 'auto', ...merged };
+  const _invalid = validateEffectiveFrontmatter(fmWithDefaults);
+  if (_invalid) fmWithDefaults._invalid = _invalid;
+  return fmWithDefaults;
+}
 
 function splitFrontmatter(raw) {
   if (!raw.startsWith('---')) return { frontmatter: null, body: raw };
@@ -28,7 +49,7 @@ async function loadOne(absPath, idBase, sourceName, source) {
   // ("foo/bar", not "foo\\bar"). On POSIX `sep === '/'` so this is a no-op.
   const relId = idBase.split(sep).join('/').replace(/\.md$/, '');
   const id = sourceName ? `${sourceName}/${relId}` : relId;
-  return { rule: { id, source, sourceName, path: absPath, frontmatter: fm, body } };
+  return { rule: { id, source, sourceName, path: absPath, rawFrontmatter: fm, body, _relIdNoExt: relId } };
 }
 
 export async function loadRules(repoRoot, config) {
@@ -45,7 +66,11 @@ export async function loadRules(repoRoot, config) {
       const rel = relative(localDir, file);
       const r = await loadOne(file, rel, null, 'local');
       if (r.error) { warnings.push(`rule ${rel}: ${r.error}`); continue; }
-      byId[r.rule.id] = r.rule;
+      const rule = r.rule;
+      rule.frontmatter = applyOverlayDefaultsAndValidate(rule.rawFrontmatter, {});
+      delete rule.rawFrontmatter;
+      delete rule._relIdNoExt;
+      byId[rule.id] = rule;
     }
   } catch {
     // local dir missing — OK, no rules
@@ -68,22 +93,18 @@ export async function loadRules(repoRoot, config) {
           warnings.push(`id collision for ${r.rule.id}: local overrides remote ${src.name}`);
           continue;
         }
-        byId[r.rule.id] = r.rule;
+        const rule = r.rule;
+        const overlay = src.overrides?.[rule._relIdNoExt] ?? {};
+        rule.frontmatter = applyOverlayDefaultsAndValidate(rule.rawFrontmatter, overlay);
+        delete rule.rawFrontmatter;
+        delete rule._relIdNoExt;
+        byId[rule.id] = rule;
       }
     } catch (e) {
       warnings.push(`remote source ${src.name} skipped: ${e.message}`);
     }
   }
 
-  // Filters — plain arrays, no Set literal.
-  const disabled = config.rules?.disabled ?? [];
-  const enabledExtra = config.rules?.enabled_extra ?? [];
-  const rules = [];
-  for (const r of Object.values(byId)) {
-    if (disabled.includes(r.id)) continue;
-    if (r.frontmatter.default === 'disabled' && !enabledExtra.includes(r.id)) continue;
-    rules.push(r);
-  }
-
+  const rules = Object.values(byId);
   return { rules, warnings };
 }

@@ -15,6 +15,8 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/guide.mjs '<free-text query>'
 
 Output: top 5 matching rules with a one-line "why relevant" plus `read:` paths. Read them, then answer the user's question citing the rule ids.
 
+Rules are listed using **effective** frontmatter (post-overlay) — remote rule overrides from `remote_rules[].overrides` are already merged in. What you see is what the reviewer enforces.
+
 For a known file path, use `autoreview:context` instead — it filters by trigger (more precise than text similarity).
 
 If output is "no relevant rules found", invoke `autoreview:create-rule` to author one.

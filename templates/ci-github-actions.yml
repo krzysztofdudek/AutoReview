@@ -69,14 +69,15 @@ jobs:
         # No-op when the product repo has no `remote_rules:` configured — safe to always run.
         run: node /tmp/autoreview/scripts/bin/pull-remote.mjs
 
-      - name: Review PR files under hard enforcement
-        # `--context validate` is hard by default → exit 1 on rule reject → PR fails.
+      - name: Review PR files
+        # Review staged files; exits 1 on any severity: error rule reject (severity: warning rules print but don't block).
         # Swap scope to --scope all for a whole-repo sweep.
-        run: node /tmp/autoreview/scripts/bin/validate.mjs --scope uncommitted --mode thinking
+        # To get file:line reasoning in CI, set tiers.<name>.mode: thinking in .autoreview/config.yaml.
+        run: node /tmp/autoreview/scripts/bin/validate.mjs --scope uncommitted
 
       # Paid provider alternative: replace the Ollama install/pull/serve steps with:
       # - name: Review PR files
       #   env:
       #     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      #   run: node /tmp/autoreview/scripts/bin/validate.mjs --scope uncommitted --mode thinking
+      #   run: node /tmp/autoreview/scripts/bin/validate.mjs --scope uncommitted
       # Remove `AUTOREVIEW_REF` env + the Ollama cache + install steps if going paid-only.

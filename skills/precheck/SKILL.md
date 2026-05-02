@@ -28,11 +28,10 @@ Use only when user has a draft in hand and wants a verdict BEFORE writing to dis
 3. **Run the reviewer test:**
    ```
    node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/reviewer-test.mjs \
-     --rule <rule-id> --file <target-path> --content-file <tmpdir>/ar-draft-<timestamp>.ts \
-     --mode thinking
+     --rule <rule-id> --file <target-path> --content-file <tmpdir>/ar-draft-<timestamp>.ts
    ```
-   Where `<target-path>` is the logical destination (e.g. `src/api/users.ts`) and `--content-file` is where the draft actually lives.
+   Where `<target-path>` is the logical destination (e.g. `src/api/users.ts`) and `--content-file` is where the draft actually lives. The reviewer automatically resolves the rule's tier from `config.yaml` — no provider flags needed. To get file:line reasoning, temporarily set `tiers.<name>.mode: thinking` in `.autoreview/config.yaml` before running, then revert.
 
 4. **Parse the `=== RESULT ===` JSON.** If `satisfied: false`, revise the draft and re-run. If `satisfied: true`, commit the write to `<target-path>`.
 
-For multiple rules, run once per rule. Each call is ~1 LLM invocation.
+For multiple rules, run once per rule. Each call is ~1 LLM invocation at the rule's configured tier.

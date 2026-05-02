@@ -8,6 +8,19 @@ import { loadRules } from '../lib/rule-loader.mjs';
 import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchForContent } from '../lib/trigger-engine.mjs';
 import { isBinary, isMainModule } from '../lib/fs-utils.mjs';
 
+function formatRuleLine(r) {
+  const fm = r.frontmatter;
+  const desc = fm.description ?? fm.name ?? r.id;
+  const markers = [];
+  if (fm.type === 'manual') markers.push('[manual]');
+  if (fm._invalid) markers.push(`[invalid: ${fm._invalid}]`);
+  const markerStr = markers.length ? '   ' + markers.join(' ') : '';
+  const tierLabel = fm.tier !== 'default' ? fm.tier : 'default';
+  const nonDefaultType = fm.type !== 'auto' ? `   type: ${fm.type}` : '';
+  const readLine = r.path ? `   read: ${r.path}` : '';
+  return `- ${r.id}: ${desc}${markerStr}\n    tier: ${tierLabel}   severity: ${fm.severity}${nonDefaultType}${readLine}\n`;
+}
+
 export async function run(argv, ctx) {
   try {
     return await _run(argv, ctx);
@@ -31,8 +44,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     }
     stdout.write(`All rules (${rules.length}):\n`);
     for (const r of rules) {
-      const desc = r.frontmatter.description ?? r.frontmatter.name ?? '';
-      stdout.write(`- ${r.id}: ${desc}\n`);
+      stdout.write(formatRuleLine(r));
     }
     return 0;
   }
@@ -71,8 +83,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   }
   stdout.write(`Rules matching ${relTarget}:\n`);
   for (const r of matches) {
-    const desc = r.frontmatter.description ?? r.frontmatter.name ?? r.id;
-    stdout.write(`- ${r.id}: ${desc} — read: ${r.path}\n`);
+    stdout.write(formatRuleLine(r));
   }
   return 0;
 }

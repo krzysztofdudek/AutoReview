@@ -17,9 +17,20 @@ The skill owns the flow. Writing directly to `.autoreview/rules/*.md` bypasses b
 2. **Propose name + trigger.** Grep the repo to learn its layout first. If the convention is directory-bound, propose `dir:"<dir>"` (shorthand for `path:"<dir>/**"`) directly.
 3. **Breadth check.** Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/check-breadth.mjs --expr '<expr>'`. Reports match count and first 10 sample paths — zero LLM cost. Iterate until the match set looks right; a trigger that matches 0 files is dead code, a trigger that matches 1000 files will 10× the per-commit review cost. Use `--rule <id>` to print what an existing rule currently matches.
 4. **Pass/fail examples.** Read 2–3 matched files with the Read tool. Reason out loud about whether each would pass the draft rule body. No LLM review call yet.
-5. **Intent trigger?** (only if `config.review.intent_triggers: true`) Ask if a Layer 2 NL intent makes sense.
-6. **Test-drive.** Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/reviewer-test.mjs --rule <id> --file <path>` against 2–3 sample files. If verdicts are wrong, go back to step 1.
-7. **Save.** Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/create-rule.mjs save --name '<n>' --triggers '<t>' --body-file <tmp> --to '<rel-path>'`. End with: *Rule saved at `.autoreview/rules/<rel-path>`. Commit when ready.* Do not run `git commit` yourself.
+5. **Tier selection.** Read `.autoreview/config.yaml` and show the user which tiers are defined. Ask which tier to assign. Explain the cost/time tradeoffs:
+
+   | Tier | Typical use | Relative cost |
+   |---|---|---|
+   | `trivial` | Style, naming, simple patterns | Cheapest / fastest |
+   | `default` | General conventions (used when `tier:` is omitted) | Baseline |
+   | `standard` | Cross-cutting concerns, API contracts | Moderate |
+   | `heavy` | Architectural rules, security invariants | Slow / expensive |
+   | `critical` | Compliance, audit, zero-tolerance violations | Most thorough |
+
+   If the user picks a tier name not yet defined in the repo's `tiers:` section (e.g., `critical` isn't configured), walk them through adding it inline: propose the tier-config block, explain each field, get **explicit user consent**, then apply the edit to `.autoreview/config.yaml` before continuing.
+
+6. **Test-drive.** Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/reviewer-test.mjs --rule <id> --file <path>` against 2–3 sample files using the chosen tier. If verdicts are wrong, go back to step 1.
+7. **Save.** Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/create-rule.mjs save --name '<n>' --triggers '<t>' --tier '<tier>' --body-file <tmp> --to '<rel-path>'`. End with: *Rule saved at `.autoreview/rules/<rel-path>`. Commit when ready.* Do not run `git commit` yourself.
 
 ## Trigger DSL reference
 
@@ -34,16 +45,21 @@ The skill owns the flow. Writing directly to `.autoreview/rules/*.md` bypasses b
 ---
 name: "Short descriptive name"
 triggers: 'path:"src/api/**/*.ts" AND content:"@Controller"'
+tier: standard
+severity: error
+type: auto
 ---
 Every controller must validate input with zod before processing.
 Reject with HTTP 400 if validation fails.
 ```
 
-Triggers run locally (zero LLM cost). The body is what the reviewer LLM checks against file content.
+Triggers run locally (zero LLM cost). The body is what the reviewer LLM checks against file content. `tier:` controls which provider+model from `config.yaml` handles the review — omit to use `default`.
 
 ## Editing or deleting existing rules
 
 Open the file under `.autoreview/rules/<id>.md` in any editor and change the body or `triggers:` line. Delete the file to remove the rule entirely. The wizard is for *new* rules only — direct edits are fine.
+
+For remote (corp-shipped) rules, use `autoreview:override-rule` to adjust tier/severity/type without forking.
 
 ## Red flags — STOP
 

@@ -73,6 +73,38 @@ test('history --format jsonl dumps filtered records', async () => {
   } finally { await cleanup(); }
 });
 
+test('history --tier filters by tier', async () => {
+  const { dir, cleanup } = await mkRepoWithHistory({
+    '2026-04-20': [
+      { type: 'verdict', ts: '2026-04-20T10:00:00Z', file: 'a.ts', rule: 'r1', verdict: 'pass', tier: 'critical' },
+      { type: 'verdict', ts: '2026-04-20T10:01:00Z', file: 'b.ts', rule: 'r2', verdict: 'pass', tier: 'standard' },
+      { type: 'verdict', ts: '2026-04-20T10:02:00Z', file: 'c.ts', rule: 'r3', verdict: 'fail', tier: 'critical' },
+    ],
+  });
+  try {
+    const c = capture();
+    const code = await run(['--tier', 'critical'], { cwd: dir, env: {}, ...c });
+    assert.equal(code, 0);
+    assert.match(c.out(), /Total records: 2/);
+  } finally { await cleanup(); }
+});
+
+test('history --severity filters by severity', async () => {
+  const { dir, cleanup } = await mkRepoWithHistory({
+    '2026-04-20': [
+      { type: 'verdict', ts: '2026-04-20T10:00:00Z', file: 'a.ts', rule: 'r1', verdict: 'pass', severity: 'error' },
+      { type: 'verdict', ts: '2026-04-20T10:01:00Z', file: 'b.ts', rule: 'r2', verdict: 'warn', severity: 'warning' },
+      { type: 'verdict', ts: '2026-04-20T10:02:00Z', file: 'c.ts', rule: 'r3', verdict: 'warn', severity: 'warning' },
+    ],
+  });
+  try {
+    const c = capture();
+    const code = await run(['--severity', 'warning'], { cwd: dir, env: {}, ...c });
+    assert.equal(code, 0);
+    assert.match(c.out(), /Total records: 2/);
+  } finally { await cleanup(); }
+});
+
 test('history with no history dir warns cleanly', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ar-hist-empty-'));
   spawnSync('git', ['init', '-q'], { cwd: dir });

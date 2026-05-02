@@ -24,7 +24,7 @@ Three steps, in order:
 
 Three things to know before your first commit:
 
-- **Soft by default.** Pre-commit warns on `[reject]` but still lets the commit through. Flip to blocking by setting `enforcement.precommit: hard` in `.autoreview/config.yaml`.
+- **`severity: error` rules block.** A `[reject]` or `[error]` (including provider unreachable) on a `severity: error` rule causes exit 1. Rules default to `severity: error`. Mark rules `severity: warning` to warn without blocking.
 - **Nothing runs until step 3.** Only the setup skill drops the hook and scaffolds config. If you see no verdicts on commit, setup hasn't run.
 - **What leaves your machine.** Ollama keeps everything local. Paid providers (Anthropic/OpenAI/Google/openai-compat) receive the full file content plus the matching rule body on each call. Trigger matching runs locally — files that match no rule never leave the box.
 
@@ -73,13 +73,16 @@ Use AutoReview when you want one rule on one file. Reach for Yggdrasil when rule
 ---
 name: "API Controllers Validate Input"
 triggers: '(path:"src/api/**/*.ts") AND content:"@Controller"'
+tier: standard
+severity: error
+type: auto
 ---
 Every controller must validate input with zod before processing.
 Reject with HTTP 400 if validation fails.
 Log rejection with correlation-id.
 ```
 
-Trigger picks the files. Body is the rule in plain English. That's the whole format.
+Trigger picks the files. Body is the rule in plain English. `tier` picks the cost/quality tier (defaults to `default`). `severity: error` blocks the commit on reject or provider error; `severity: warning` prints a warning and lets the commit proceed. `type: auto` means the hook runs it automatically; `type: manual` means it only runs when explicitly invoked via `--rule <id>`. All three frontmatter fields are optional — defaults are `tier: default`, `severity: error`, `type: auto`.
 
 ## Trigger DSL cheatsheet
 
@@ -104,16 +107,16 @@ git commit
   ↓
 pre-commit hook
   ↓
-for each staged file, find rules that match the trigger
+for each staged file, find auto rules that match the trigger
   ↓
-send file + matched rule to reviewer (Ollama by default)
+send file + matched rule to reviewer (tier's provider/model)
   ↓
 [pass] src/api/users.ts :: api/validate-input
 [reject] src/api/orders.ts :: api/validate-input
     reason: charge() mutates state without zod validation (line 42)
   ↓
-commit warns but proceeds by default (soft mode).
-Set `enforcement.precommit: hard` in config.yaml to actually block.
+severity: error rules → exit 1 (commit blocked)
+severity: warning rules → exit 0 ([warn] printed, commit proceeds)
 ```
 
 Triggers are deterministic. No LLM call for trigger matching. Only files with matching rules go to the reviewer. No matches, zero cost.
@@ -142,8 +145,8 @@ The 7 steps the agent walks through:
 2. **Name + trigger** — grep the repo layout, propose a `path:`/`dir:`/`content:` trigger.
 3. **Breadth check** — run the trigger locally, show match count + first 10 files. Iterate until the set is right.
 4. **Pass/fail samples** — read 2–3 matched files, reason about whether they'd pass the draft body.
-5. **Intent trigger?** — offer a Layer-2 NL gate (only when `intent_triggers: true` in config).
-6. **Test-drive** — run the actual reviewer against sample files. Adjust body if verdicts are wrong.
+5. **Tier selection** — pick the cost/quality tier (`default`, `trivial`, `standard`, `heavy`, `critical`). Reads your actual `tiers:` config and explains cost/time per tier.
+6. **Test-drive** — run the actual reviewer against sample files using the selected tier. Adjust body if verdicts are wrong.
 7. **Save** — write `.autoreview/rules/<id>.md`.
 
 Commit. Hook runs. Done.
@@ -153,23 +156,24 @@ Commit. Hook runs. Done.
 When a rule blocks something that shouldn't be blocked, three options in order of preference:
 
 1. **Suppress one site.** Add `// @autoreview-ignore <rule-id> <why>` above the offending block (or function, or file top). Reason is mandatory. The reviewer honors scope from where the marker sits — see the [Inline suppressions](#inline-suppressions) section below.
-2. **Soft mode for the session.** Flip `enforcement.precommit: soft` in `config.personal.yaml` (gitignored). You'll still see `[reject]` lines but commits won't block. Team stays on `hard` via `config.yaml`.
+2. **Downgrade to warning.** Set `severity: warning` in the rule's frontmatter (local) or via `/autoreview:override-rule` (remote rule). You'll still see `[warn]` lines but commits won't block.
 3. **Last resort.** `git commit --no-verify` bypasses the hook entirely for one commit. Leaves no audit trail in history. Use for true emergencies.
 
 When a rule is plain wrong, edit it — rules are markdown. `.autoreview/rules/<id>.md` opens in any editor; delete the file to remove the rule; change the body to fix the check; change the `triggers:` line to narrow scope. `/autoreview:create-rule` runs the quality-guarded wizard for new rules, but editing existing ones is a plain file edit.
 
 ## review vs. pre-commit context
 
-Same engine, different defaults:
+Same engine, same severity exit policy:
 
 | | pre-commit hook | `/autoreview:review` |
 |---|---|---|
-| enforcement default | **soft** (warn, commit proceeds) | **hard** (reject exits 1) |
 | scope default | staged files only | uncommitted (staged + modified + untracked) |
-| mode default | quick (pass/fail only) | thinking (reason with file:line) |
-| consensus cap | always 1 (budget guard) | whatever config says |
+| `type: manual` rules | skipped | skipped (unless `--rule <id>` supplied) |
+| consensus | per-tier `consensus:` setting | per-tier `consensus:` setting |
 
-Override any default via flags (`--scope all`, `--mode thinking`, `--context validate`).
+Both contexts block on `severity: error` rules' `[reject]` and `[error]` verdicts (exit 1). Both let `severity: warning` verdicts through (exit 0).
+
+Override scope via `--scope all`; change mode or reasoning effort by editing the tier in `.autoreview/config.yaml`.
 
 ## Pre-check before the agent writes
 
@@ -182,11 +186,10 @@ Or from any shell (after setup has scaffolded `.autoreview/runtime/`):
 node .autoreview/runtime/bin/reviewer-test.mjs \
   --rule <rule-id> \
   --file src/api/users.ts \
-  --content-file <tmpdir>/draft.ts \
-  --mode thinking
+  --content-file <tmpdir>/draft.ts
 ```
 
-Use `node -e "console.log(require('os').tmpdir())"` to get a writable tmp dir on any platform.
+Use `node -e "console.log(require('os').tmpdir())"` to get a writable tmp dir on any platform. Mode and reasoning effort are set in the tier config, not as flags.
 
 ## On-demand review
 
@@ -205,23 +208,24 @@ Rules are plain Markdown files at `.autoreview/rules/<id>.md`. Open one in your 
 
 - **Change what's enforced** → edit the body in `.autoreview/rules/<id>.md`.
 - **Change which files it applies to** → edit the `triggers:` line in the frontmatter.
-- **Turn one rule off temporarily** → add the id under `rules.disabled:` in `config.yaml` (team) or `config.personal.yaml` (just you).
+- **Turn one rule off temporarily** → set `type: manual` in the rule frontmatter (local) or via `/autoreview:override-rule` (remote). Manual rules only run when explicitly invoked via `--rule <id>`.
 - **Remove entirely** → delete the file.
 
 No re-init, no rebuild. The next commit picks up the change.
 
 ## Skills (agent-first surface)
 
-The plugin exposes 8 skills — every skill has a rich `description: Use when…` trigger so the agent picks the right one based on user intent. Users typically don't invoke skills directly; they ask the agent in plain language ("set up autoreview", "what rules apply here?", "did my last commit pass?") and the agent picks the matching skill.
+The plugin exposes 9 skills — every skill has a rich `description: Use when…` trigger so the agent picks the right one based on user intent. Users typically don't invoke skills directly; they ask the agent in plain language ("set up autoreview", "what rules apply here?", "did my last commit pass?") and the agent picks the matching skill.
 
-- `autoreview:setup` — scaffold `.autoreview/` in a repo, probe Ollama / models, install pre-commit hook.
-- `autoreview:create-rule` — 7-step guided rule wizard (convention → trigger → breadth check → samples → test-drive → save).
-- `autoreview:context` — list rules matching a path (pre-write, free).
+- `autoreview:setup` — scaffold `.autoreview/` in a repo, probe Ollama / models, install pre-commit hook. Explains tier model and overlay model during setup.
+- `autoreview:create-rule` — 7-step guided rule wizard (convention → trigger → breadth check → samples → tier selection → test-drive → save).
+- `autoreview:context` — list rules matching a path, showing effective frontmatter post-overlay; marks `[manual]` and `[invalid]` rules (pre-write, free).
 - `autoreview:guide` — find rules by free-text intent (free).
 - `autoreview:precheck` — verdict on a draft not yet on disk (1 LLM call per rule).
-- `autoreview:review` — run the reviewer on existing files; debug a blocked commit.
-- `autoreview:history` — query the review log (verdict counts, recent records, free).
+- `autoreview:review` — run the reviewer on existing files; debug a blocked commit. Pass `--rule <id>` for manual rules.
+- `autoreview:history` — query the review log (verdict counts, recent records, `--tier`/`--severity` filters, free).
 - `autoreview:pull-remote` — fetch / refresh remote rule sources.
+- `autoreview:override-rule` — wizard for remote-rule overlays (change tier, severity, type, triggers without forking upstream).
 
 Each skill body documents its CLI invocation (always `node ${CLAUDE_PLUGIN_ROOT}/scripts/bin/<X>.mjs`) and platform notes. The pre-commit hook calls `validate.mjs` directly — independent of the skill surface.
 
@@ -233,39 +237,46 @@ Each skill body documents its CLI invocation (always `node ${CLAUDE_PLUGIN_ROOT}
 
 **Agent CLI:** Claude Code, Codex, Gemini CLI. Uses whichever agent binary is on your `$PATH` as the reviewer.
 
-Per-rule override. Cheap model for trivial rules, stronger model for the one that matters.
+Provider is declared per-tier, not globally. Rules declare a `tier:` (logical cost band); tiers map to a concrete provider+model. Changing vendors is a config edit, not a rule rewrite.
 
-### Per-provider parallelism
+### Tiers
 
-Each provider block accepts an optional `parallel` field (positive integer) that caps concurrent in-flight LLM calls to that provider. Defaults are tuned per provider:
-
-| Provider | Default `parallel` | Why |
-|---|---:|---|
-| `ollama` | 1 | Local GPU/CPU; concurrent calls thrash a single GPU. |
-| `openai-compat` | 5 | Local high-throughput servers (LM Studio, vLLM) handle small concurrency well. |
-| `anthropic` / `openai` / `google` | 10 | Paid HTTP APIs with generous RPM tiers. Free-tier OpenAI users (4 RPM) should drop this to 2–3 manually. |
-| `claude-code` / `codex` / `gemini-cli` | 3 | Each call forks a CLI subprocess; startup overhead caps useful concurrency, especially on Windows. |
-
-Example:
+Each tier is a self-contained config block. Example:
 
 ```yaml
-provider:
-  active: anthropic
-  anthropic: { model: "claude-haiku-4-5", parallel: 10 }
-  ollama:    { endpoint: "http://localhost:11434", model: "qwen2.5-coder:7b", parallel: 1 }
+tiers:
+  default:
+    provider: ollama
+    model: qwen2.5-coder:7b
+    endpoint: http://localhost:11434
+    parallel: 1
+    mode: quick
+  standard:
+    provider: anthropic
+    model: claude-haiku-4-5
+    parallel: 10
+  critical:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    mode: thinking
+    reasoning_effort: high
 ```
 
-The same `parallel` value applies in pre-commit, validate, and any future review context — `parallel` is a property of the provider, not the run.
+Five allowed tier names: `default` (mandatory), `trivial`, `standard`, `heavy`, `critical`. Rules without an explicit `tier:` use `default`. Defining a tier is opt-in — repos only add the tiers their rules reference.
+
+The `parallel` field (positive integer) caps concurrent in-flight calls for that tier. Defaults: `ollama: 1`, `openai-compat: 5`, `anthropic`/`openai`/`google: 10`, `claude-code`/`codex`/`gemini-cli: 3`.
+
+`mode` is `quick` (pass/fail JSON) or `thinking` (chain-of-thought + file:line references). `reasoning_effort` (`low`|`medium`|`high`) activates native reasoning APIs where supported (Anthropic, OpenAI reasoning models); silently ignored by Ollama, openai-compat, CLI providers.
 
 When a paid provider returns `429` (rate limited) or `408` (request timeout), the call retries with exponential backoff up to 4 attempts, honouring any `Retry-After` header (capped at 30s). Each retry emits one `[warn]` line on stderr.
 
 ## Modes
 
-**Quick** is pass/fail only. `{"satisfied": true|false}` and nothing else. Default for pre-commit.
+**Quick** is pass/fail only. `{"satisfied": true|false}` and nothing else.
 
-**Thinking** returns `{satisfied, reason, suppressed[]}` with file:line references and configurable reasoning effort. Default for manual validate.
+**Thinking** returns `{satisfied, reason, suppressed[]}` with file:line references.
 
-Both modes share one output cap: `review.output_max_tokens`. Default `0` = no cap (models finish naturally). Raise only if you want to bound spend on a paid API.
+Mode is set per-tier in `config.yaml` (`mode: quick` or `mode: thinking`). There are no `--mode` or `--reasoning-effort` CLI flags — change the tier config instead. `output_max_tokens` (default `0` = no cap) is also a per-tier field.
 
 ## Inline suppressions
 
@@ -286,14 +297,14 @@ Three files:
 
 - `.autoreview/config.yaml` is committed. Team-shared baseline.
 - `.autoreview/config.personal.yaml` is gitignored. Per-developer overrides.
-- `.autoreview/config.secrets.yaml` is gitignored. API keys only.
+- `.autoreview/config.secrets.yaml` is gitignored. API keys only (keyed by provider type: `anthropic`, `openai`, `google`, `openai-compat`).
 
-Personal config overrides repo config for any key. Switch provider on your machine, enable intent triggers locally, whatever.
+Personal config deep-merges over repo config. Common pattern: team defines `tiers.heavy: claude-sonnet`; a developer's personal config sets `tiers.heavy.model: claude-opus-4-7` to upgrade locally.
 
-Two knobs worth knowing about under `review:`:
+Two per-tier knobs worth knowing about:
 
 - `context_window_bytes` — defaults to `auto` (each adapter returns its best guess). `openai-compat` hard-codes 16 kB, way too small for modern long-context models. Override with the real byte budget: `160000` for Qwen3.6-35B, whatever your model actually supports. Too low and the chunker truncates or skips big files.
-- `output_max_tokens` — defaults to `0` = no cap, in both quick and thinking mode. Local servers finish naturally, paid APIs use the provider's default. Raise it only to force a ceiling on Anthropic/OpenAI output-token spend.
+- `output_max_tokens` — defaults to `0` = no cap. Local servers finish naturally, paid APIs use the provider's default. Raise it only to force a ceiling on Anthropic/OpenAI output-token spend.
 
 ## Remote rules
 
@@ -305,13 +316,21 @@ remote_rules:
     url: "https://github.com/acme/review-rules.git"
     ref: "v1.2.0"
     path: "rules/"
+    overrides:
+      audit-log-on-handlers:
+        tier: standard       # downstream from corp's heavy
+        severity: warning    # warn-only for this repo
+      legacy-perf-rule:
+        type: manual         # dormant — requires explicit --rule to invoke
 ```
 
-`/autoreview:pull-remote` clones the pinned ref into `.autoreview/remote_rules/`. Set `review.remote_rules_auto_pull: true` to refresh on every review run.
+`/autoreview:pull-remote` clones the pinned ref into `.autoreview/remote_rules/`. Remote rules are pulled explicitly — no auto-pull setting.
+
+**Overlays** (`remote_rules[].overrides`) let you adapt upstream frontmatter (`tier`, `severity`, `type`, `triggers`, `name`, `description`) without forking the rule source. The `/autoreview:override-rule` wizard walks you through adding an overlay with a breadth check and test-drive. Overrides in `config.personal.yaml` stack on top of repo overrides; the reviewer always sees the fully-merged effective frontmatter.
 
 ## CI integration
 
-Drop [templates/ci-github-actions.yml](templates/ci-github-actions.yml) into `.github/workflows/autoreview.yml`. It installs Ollama + Qwen, runs `validate.mjs --scope uncommitted --mode thinking` against PR diffs, fails the job on reject under hard enforcement. Swap the Ollama steps for an API-key secret to use Anthropic/OpenAI/Google.
+Drop [templates/ci-github-actions.yml](templates/ci-github-actions.yml) into `.github/workflows/autoreview.yml`. It installs Ollama + Qwen, runs `validate.mjs --scope uncommitted` against PR diffs, and exits 1 on any `severity: error` reject or error. Swap the Ollama steps for an API-key secret to use Anthropic/OpenAI/Google. Set `mode: thinking` in the relevant tier config to get file:line reasoning in CI logs.
 
 ## For teams
 
@@ -328,15 +347,17 @@ Rules live in your repo. Personal config lives on your machine. API keys live in
 
 ## Exit codes
 
-- `0` pass, soft-fail, or no matching rules
-- `1` at least one rule rejected under hard enforcement
+- `0` all pass/warn, or no matching rules
+- `1` at least one `severity: error` rule produced `[reject]` or `[error]` (including provider unreachable)
 - `2` internal tool error, not a rule verdict
 
-CI that needs to distinguish crashed-tool from rule-rejected parses stderr. `[reject]` is rule. `[error]` is tool.
+Rules default to `severity: error`. Mark a rule `severity: warning` to make it non-blocking.
+
+CI that needs to distinguish crashed-tool from rule-rejected parses stderr. `[reject]` and `[warn]` are rule verdicts. `[error]` is either a rule verdict (provider/tier failure for a `severity: error` rule) or a tool error — the text identifies which.
 
 ## The tool never blocks a broken setup
 
-No Ollama running, no API key, no config. Commit still goes through. Warning on stderr, exit 0. This is not configurable. The tool is not allowed to break your workflow because it isn't set up right.
+No Ollama running, no API key, no config. If config is missing or fails to parse, the hook warns on stderr and exits 0. A `severity: error` rule whose tier's provider is unreachable produces an `[error]` verdict and exits 1 — this is intentional signal that the review couldn't run.
 
 ## FAQ
 

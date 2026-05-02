@@ -92,10 +92,44 @@ test('run(): no sources warns cleanly', async () => {
   const { dir: user, cleanup: cleanupUser } = await mkUserRepo();
   try {
     await mkdir(join(user, '.autoreview'), { recursive: true });
-    await writeFile(join(user, '.autoreview/config.yaml'), 'provider:\n  active: ollama\n');
+    await writeFile(join(user, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: qwen2.5-coder:7b\n    endpoint: http://localhost:11434\n');
     const c = capture();
     const code = await run([], { cwd: user, env: process.env, ...c });
     assert.equal(code, 0);
     assert.match(c.err(), /no remote sources/);
   } finally { await cleanupUser(); }
+});
+
+test('run(): warns for overrides referencing absent rule ids', async () => {
+  const { dir: remote, cleanup: cleanupRemote } = await mkFakeRemote();
+  const { dir: user, cleanup: cleanupUser } = await mkUserRepo();
+  try {
+    await mkdir(join(user, '.autoreview'), { recursive: true });
+    await writeFile(join(user, '.autoreview/config.yaml'),
+      [
+        'tiers:',
+        '  default:',
+        '    provider: ollama',
+        '    model: qwen2.5-coder:7b',
+        '    endpoint: http://localhost:11434',
+        'remote_rules:',
+        '  - name: shared',
+        `    url: ${remote}`,
+        '    ref: v1',
+        '    path: rules',
+        '    overrides:',
+        '      a: {}',
+        '      absent-rule: {}',
+      ].join('\n'),
+    );
+    const c = capture();
+    const code = await run(['shared'], { cwd: user, env: process.env, ...c });
+    assert.equal(code, 0);
+    assert.match(c.err(), /override for 'shared\/absent-rule' but rule absent in fetched ref/);
+    assert.doesNotMatch(c.err(), /override for 'shared\/a'/);
+  } finally {
+    await cleanupRemote();
+    await cleanupUser();
+  }
 });

@@ -4,6 +4,25 @@ All notable changes to AutoReview documented here. Format based on [Keep a Chang
 
 ## [Unreleased]
 
+### BREAKING
+
+- Config schema redesigned: `provider:` / `enforcement:` / `context_overrides:` / `review:` / top-level `rules:` removed. New `tiers:` section with five fixed tier names (`default`, `trivial`, `standard`, `heavy`, `critical`). See `docs/superpowers/specs/2026-05-01-tiered-intelligence-design.md` for migration guide.
+- Rule frontmatter: `provider:`, `model:`, `intent:`, `evaluate:`, `default: disabled` removed. New `tier:`, `severity:` (error|warning), `type:` (auto|manual). See spec section 3.
+- Layer 2 NL gate (`intent_triggers`) feature dropped entirely.
+- Pre-commit hook now blocks on `severity: error` rules' `[reject]` AND `[error]` verdicts. The previous "soft enforcement on provider errors" hard rule is removed; per-rule `severity: warning` is the opt-out.
+- Remote rule overlays via `remote_rules[].overrides[<rule-id>]` — adapt upstream rules without forking.
+- History records (`.autoreview/.history/*.jsonl`) wiped on upgrade; new schema with `tier:` and `severity:` fields.
+
+### Added
+
+- New `autoreview:override-rule` skill — wizard for remote-rule overlays.
+- `autoreview:context` shows effective frontmatter post-overlay; marks `[manual]` and `[invalid]` rules.
+- `autoreview:history` accepts `--tier` and `--severity` filters.
+
+### Notes
+
+- Pre-release breaking change. No external users to migrate. Single atomic commit; the plugin version bump triggers `runtime-sync` on next SessionStart so the pre-commit hook automatically picks up the new config-loader.
+
 ## [0.2.0]
 
 ### Changed (BREAKING)

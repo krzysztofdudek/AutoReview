@@ -1,48 +1,145 @@
+# AutoReview config — see docs at https://github.com/krzysztofdudek/AutoReview
+# This file controls how rules are evaluated. Three top-level sections:
+#   - tiers:         which model handles each rule (mandatory: define `default`)
+#   - remote_rules:  upstream rule packs + per-rule overlays
+#   - history:       audit log of every verdict
+
 version: "0.1"
 
-provider:
-  active: ollama
-  # Optional `parallel: <int>` per provider caps concurrent in-flight LLM calls. Defaults
-  # are filled in at load time when omitted: ollama 1 (single GPU thrashes under concurrency),
-  # openai-compat 5 (LM Studio / vLLM batched servers), anthropic/openai/google 10 (paid APIs
-  # with generous RPM tiers — free-tier OpenAI users at 4 RPM should drop to 2–3 manually),
-  # claude-code/codex/gemini-cli 3 (CLI subprocess startup overhead caps useful concurrency).
-  # 429/408 responses retry with exponential backoff up to 4 attempts honouring Retry-After.
-  ollama:        { endpoint: "http://localhost:11434", model: "qwen2.5-coder:7b", parallel: 1 }
-  claude-code:   { model: haiku, parallel: 3 }
-  codex:         { model: "gpt-5", parallel: 3 }
-  gemini-cli:    { model: "gemini-2.5-flash", parallel: 3 }
-  anthropic:     { model: "claude-haiku-4-5", parallel: 10 }
-  openai:        { model: "gpt-4o-mini", parallel: 10 }
-  google:        { model: "gemini-2.5-flash", parallel: 10 }
-  openai-compat: { endpoint: "", model: "", parallel: 5 }
+# ============================================================
+# TIERS — logical "intelligence levels" for rules.
+# ============================================================
+#
+# Why differentiate? Cheap-fast-local for trivial rules (no console.log),
+# slow-thinking-cloud for architectural rules (audit-log on handlers).
+# Per-rule cost stratification without scattering provider names across rules.
+#
+# A rule declares `tier: <name>` in its frontmatter (defaults to `default`).
+# This config maps tier names to concrete model+provider combos.
+#
+# Five fixed tier names: default (mandatory) + trivial, standard, heavy, critical (opt-in).
+# Each tier is self-contained — no field inheritance across tiers.
+#
+# When does each tier fire?
+#   trivial   — regex-grade rules ("no TODO without ticket", lint-style)
+#   standard  — file-local logical reasoning ("controllers must validate input")
+#   heavy     — multi-step semantic reasoning ("audit log on mutating handlers")
+#   critical  — top-importance rules where cost is justified by correctness
+#   default   — fallback for rules that don't declare tier:
+#
+# All tier fields with their defaults (omit a field to use the default):
+#
+#   provider:              <required>  ollama | anthropic | openai | google | openai-compat |
+#                                      claude-code | codex | gemini-cli
+#   model:                 <required>  provider-specific model id (e.g. "gpt-4o-mini")
+#   endpoint:              <conditional>  required for ollama and openai-compat;
+#                                         ignored for cloud APIs and CLI providers
+#   parallel:              1           int >=1; max concurrent in-flight calls per tier
+#   mode:                  quick       quick | thinking; prompt format toggle
+#                                      (asks model for chain-of-thought before verdict)
+#   reasoning_effort:      medium      low | medium | high; native reasoning APIs
+#                                      (Anthropic, OpenAI); ignored by others
+#   consensus:             1           odd int >=1; vote count (3 = majority of 3 calls)
+#   timeout_ms:            120000      per-call deadline in ms
+#   context_window_bytes:  auto        "auto" probes provider; or explicit byte int
+#   output_max_tokens:     0           0 = no cap (let model finish)
 
-review:
-  evaluate: diff
-  mode: quick
-  reasoning_effort: medium
-  consensus: 1
-  intent_triggers: false
-  intent_trigger_budget: 50
-  context_window_bytes: auto
-  output_reserve_bytes: 2000
-  output_max_tokens: 0   # 0 = no cap, both quick + thinking mode. Raise only to cap output-token spend on paid APIs.
-  walk_file_cap: 10000
-  # remote_rules_auto_pull: false  # set to true to auto-pull missing remote rule caches on validate
+tiers:
+  default:
+    provider: ollama
+    model: qwen2.5-coder:7b
+    endpoint: http://localhost:11434
+    # parallel: 1
+    # mode: quick
+    # reasoning_effort: medium
+    # consensus: 1
+    # timeout_ms: 120000
+    # context_window_bytes: auto
+    # output_max_tokens: 0
 
-enforcement:
-  precommit: soft
-  validate: hard
+  # trivial — regex-grade rules. Fastest tier; smallest model; no consensus.
+  # Uncomment + adjust if you have rules with `tier: trivial`.
+  #
+  # trivial:
+  #   provider: ollama
+  #   model: phi3:mini
+  #   endpoint: http://localhost:11434
+  #   mode: quick
+  #   parallel: 1
 
-context_overrides:
-  precommit: { mode: quick, consensus: 1, scope: staged }
-  validate:  { mode: thinking, scope: uncommitted }
+  # standard — file-local logical reasoning. Default cost-effective tier for most rules.
+  #
+  # standard:
+  #   provider: openai-compat
+  #   model: deepseek-coder
+  #   endpoint: https://api.deepseek.com/v1
+  #   mode: quick
+  #   consensus: 1
 
-rules:
-  enabled_extra: []
-  disabled: []
+  # heavy — multi-step semantic reasoning. Use for architectural rules.
+  #
+  # heavy:
+  #   provider: anthropic
+  #   model: claude-sonnet-4-5
+  #   parallel: 4
+  #   mode: thinking
+  #   reasoning_effort: medium
+
+  # critical — top-importance rules. Most capable model; can be slow / expensive.
+  #
+  # critical:
+  #   provider: anthropic
+  #   model: claude-opus-4-7
+  #   parallel: 2
+  #   mode: thinking
+  #   reasoning_effort: high
+  #   consensus: 3
+  #   timeout_ms: 300000
+  #   output_max_tokens: 16384
+
+# ============================================================
+# REMOTE RULES — pull rule packs from external git repos.
+# ============================================================
+#
+# Each remote source: name, url, ref (branch/tag/sha), optional path inside the repo.
+# Rules pulled to .autoreview/remote_rules/<name>/<ref>/<path>/ on `pull-remote`.
+#
+# Why overlays? Adapt corp-shipped rules to your repo without forking.
+#
+# Override per-rule frontmatter under `overrides:`. Allowed fields:
+#   name | triggers | tier | severity | type | description
+# Body NEVER overridable (forking is the right answer for body changes).
+#
+# Use YAML null to revert to default: `tier: null` resets a corp-set tier to `default`.
+#
+# Example:
+#
+# remote_rules:
+#   - name: corp-standards
+#     url: https://github.com/acme/autoreview-rules
+#     ref: v1.2.0
+#     path: rules
+#     overrides:
+#       no-todo-without-ticket:
+#         tier: trivial                    # downgrade from corp's heavy
+#         triggers: 'path:"src/**/*.ts"'   # narrow to my repo's TypeScript
+#       audit-log-on-handlers:
+#         type: manual                     # don't auto-run in pre-commit
+#         severity: warning
+#       legacy-perf-rule:
+#         type: manual                     # dormant; agent must invoke via --rule
 
 remote_rules: []
+
+# ============================================================
+# HISTORY — audit log of every verdict.
+# ============================================================
+#
+# Records under .autoreview/.history/<date>.jsonl. Includes provider, model,
+# tier, severity, actor, host, ci_run_id, commit_sha. Searchable via
+# autoreview:history skill (free; no LLM cost).
+#
+# Set log_to_file: false for privacy-conscious repos (no on-disk log).
 
 history:
   log_to_file: true

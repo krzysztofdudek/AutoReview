@@ -48,6 +48,8 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   if (values.file) filtered = filtered.filter(r => matchPath(values.file, r.file));
   if (values.sha) filtered = filtered.filter(r => r.commit_sha && r.commit_sha.startsWith(values.sha));
   if (values.actor) filtered = filtered.filter(r => r.actor === values.actor);
+  if (values.tier) filtered = filtered.filter(r => r.tier === values.tier);
+  if (values.severity) filtered = filtered.filter(r => r.severity === values.severity);
 
   if (format === 'jsonl') {
     for (const r of filtered) stdout.write(JSON.stringify(r) + '\n');

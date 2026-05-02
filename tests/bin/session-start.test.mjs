@@ -26,7 +26,8 @@ test('emits operating manual to stdout when config present', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ar-ss-'));
   try {
     await mkdir(join(dir, '.autoreview'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'provider:\n  active: ollama\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: qwen2.5-coder:7b\n    endpoint: http://localhost:11434\n');
     await mkdir(join(dir, 'templates'), { recursive: true });
     await writeFile(join(dir, 'templates/agent-rules.md'), '# agent rules\n');
     const c = capture();
@@ -42,7 +43,8 @@ test('auto-upgrades .autoreview/runtime when plugin version has bumped', async (
     // Repo side: .autoreview/ with a stale runtime pinned to 0.1.0
     await mkdir(join(dir, '.autoreview/runtime/lib'), { recursive: true });
     await mkdir(join(dir, '.autoreview/runtime/bin'), { recursive: true });
-    await writeFile(join(dir, '.autoreview/config.yaml'), 'provider:\n  active: ollama\n');
+    await writeFile(join(dir, '.autoreview/config.yaml'),
+      'tiers:\n  default:\n    provider: ollama\n    model: qwen2.5-coder:7b\n    endpoint: http://localhost:11434\n');
     await writeFile(join(dir, '.autoreview/runtime/.version'), '0.1.0\n');
     await writeFile(join(dir, '.autoreview/runtime/lib/marker.mjs'), 'STALE\n');
 

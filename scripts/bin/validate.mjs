@@ -6,14 +6,11 @@ import { loadConfig } from '../lib/config-loader.mjs';
 import { loadRules } from '../lib/rule-loader.mjs';
 import { resolveScope } from '../lib/scope-resolver.mjs';
 import { reviewFile } from '../lib/reviewer.mjs';
-import { getProvider } from '../lib/provider-client.mjs';
-import { createIntentGate } from '../lib/intent-gate.mjs';
 import { reportVerdicts } from '../lib/report.mjs';
 import { createHistorySession } from '../lib/history.mjs';
 import { readFileOrNull, isBinary, isMainModule } from '../lib/fs-utils.mjs';
 import { readFile, appendFile } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
-import { pullSource } from '../lib/remote-rules-pull.mjs';
 import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchForContent } from '../lib/trigger-engine.mjs';
 import { Semaphore } from '../lib/concurrency.mjs';
 
@@ -86,15 +83,6 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   }
 
   const context = values.context ?? 'validate';
-  const ctxOverrides = cfg.context_overrides?.[context] ?? {};
-  cfg.review = { ...cfg.review, ...ctxOverrides };
-  if (values.mode) cfg.review.mode = values.mode;
-  if (values['reasoning-effort']) cfg.review.reasoning_effort = values['reasoning-effort'];
-
-  // Design §4 invariant: precommit caps consensus at 1 (spawn budget).
-  if (context === 'precommit') cfg.review.consensus = 1;
-
-  const enforcement = cfg.enforcement?.[context] ?? (context === 'precommit' ? 'soft' : 'hard');
 
   // §24: if remote_rules are declared and their cache is missing, auto-pull BEFORE loading rules
   // so the remote rules are actually available to this review run. Without this reorder,
@@ -103,22 +91,15 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     const sentinelPath = `${root}/.autoreview/remote_rules/${source.name}/${source.ref}/.autoreview-managed`;
     const sentinel = await readFileOrNull(sentinelPath);
     if (!sentinel) {
-      if (cfg.review.remote_rules_auto_pull) {
-        try {
-          stderr.write(`[info] auto-pulling remote '${source.name}@${source.ref}'...\n`);
-          await pullSource({ repoRoot: root, source, env });
-        } catch (err) {
-          stderr.write(`[warn] auto-pull failed for ${source.name}: ${err.message}\n`);
-        }
-      } else {
-        stderr.write(`[warn] remote source '${source.name}@${source.ref}' has no cache — run /autoreview:pull-remote or set review.remote_rules_auto_pull: true\n`);
-      }
+      stderr.write(`[warn] remote source '${source.name}@${source.ref}' has no cache — run /autoreview:pull-remote\n`);
     }
   }
 
   const { rules, warnings: ruleWarnings } = await loadRules(root, cfg);
   for (const w of ruleWarnings) stderr.write(`[warn] ${w}\n`);
-  const filtered = values.rule ? rules.filter(r => values.rule.includes(r.id)) : rules;
+  const filtered = values.rule
+    ? rules.filter(r => values.rule.includes(r.id))
+    : rules.filter(r => r.frontmatter.type !== 'manual');
 
   // §15: hypothetical pre-check — content from disk scratch file, logical path supplied.
   let entries;
@@ -140,13 +121,14 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     }];
   } else {
     const explicitSelector = values.scope || values.sha || values.files || values.dir;
+    const defaultScope = context === 'precommit' ? 'staged' : 'uncommitted';
     const scopeArgs = {
       repoRoot: root,
-      scope: values.scope ?? (explicitSelector ? null : ctxOverrides.scope),
+      scope: values.scope ?? (explicitSelector ? null : defaultScope),
       sha: values.sha,
       files: values.files,
       dir: values.dir,
-      walkCap: cfg.review.walk_file_cap ?? 10000,
+      walkCap: 10000,
     };
     const scopeResult = await resolveScope(scopeArgs);
     for (const w of scopeResult.warnings) stderr.write(`[warn] ${w}\n`);
@@ -155,15 +137,6 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   }
 
   const stubProvider = stubProviderByEnv(env);
-  const resolveProvider = (rule) => stubProvider ?? getProvider(cfg, {
-    ruleProvider: rule?.frontmatter?.provider,
-    ruleModel: rule?.frontmatter?.model,
-  });
-  const intentGate = createIntentGate({
-    resolveProvider,
-    budget: cfg.review.intent_trigger_budget,
-    onBudgetExhausted: () => stderr.write('[warn] intent budget exhausted — remaining rules evaluated against Layer 1 only\n'),
-  });
 
   // Attribute every verdict: who ran the review, on which host, under which CI job,
   // and against which commit (when --sha was used; null otherwise — pre-commit's target
@@ -175,8 +148,8 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     ? createHistorySession(root, { defaults: historyDefaults })
     : null;
 
-  let hardFailure = false;
-  let rejectCount = 0;
+  let errorSeverityFailure = false;
+  let anyQuickModeFail = false;
   const reviewState = { ctxCache: new Map(), warnedReasoning: new Set() };
 
   const fileState = new Map();
@@ -188,7 +161,11 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     const contentForbidden = shouldTreatAsNonMatchForContent(fileSize, entry.binary);
     const matchedRules = filtered.filter(rule => {
       if (!rule._triggersAst) rule._triggersAst = parseTrigger(rule.frontmatter.triggers);
-      return evalTrigger(rule._triggersAst, { path: entry.path, content: entry.content, binary: contentForbidden });
+      const matches = evalTrigger(rule._triggersAst, { path: entry.path, content: entry.content, binary: contentForbidden });
+      if (!matches && values.rule?.includes(rule.id)) {
+        stderr.write(`[warn] rule ${rule.id} declared via --rule but triggers don't match ${entry.path}; skipping\n`);
+      }
+      return matches;
     });
     fileState.set(entry.path, {
       entry,
@@ -209,15 +186,9 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
   }
 
   // Heads-up before a long paid-API run so the user can Ctrl-C early.
-  if (pairs.length * cfg.review.consensus > 100) {
-    stderr.write(`[info] large run: ${pairs.length} (file, rule) pairs × consensus=${cfg.review.consensus} — Ctrl-C now if this is unexpected\n`);
-  }
-
-  // Intent-gate budget race: concurrent intent checks can overshoot the budget under fan-out.
-  // Atomic budget decrement is a follow-up; emit a one-time warning so the user is aware.
-  const activeParallel = cfg.provider[cfg.provider.active]?.parallel ?? 1;
-  if (cfg.review.intent_triggers && activeParallel > 1) {
-    stderr.write(`[warn] intent_triggers is on with parallel=${activeParallel}: budget may be exceeded under concurrent fan-out (atomic budget fix is a follow-up)\n`);
+  const totalCalls = pairs.reduce((s, p) => s + (cfg.tiers[p.rule.frontmatter.tier ?? 'default']?.consensus ?? 1), 0);
+  if (totalCalls > 100) {
+    stderr.write(`[info] large run: ${pairs.length} (file, rule) pairs, ~${totalCalls} total LLM calls (varying per tier) — Ctrl-C now if this is unexpected\n`);
   }
 
   // Files matching zero rules still get an empty file-summary (preserves prior behaviour).
@@ -241,25 +212,27 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
         repoRoot: root, config: cfg, rules: [rule],
         file: { path: entry.path, content: entry.content, binary: entry.binary },
         diff: entry.diff,
-        intentGate,
         historyEnabled: cfg.history.log_to_file,
         historyAppend: historySession ? rec => historySession.append(rec) : null,
         _providerOverride: stubProvider,
         _state: reviewState,
         stderr,
       });
-      reportVerdicts(entry, verdicts, cfg.review.mode, stderr, { softContext: enforcement === 'soft' });
+      const reportMode = verdicts[0]?.mode ?? 'quick';
+      reportVerdicts(entry, verdicts, reportMode, stderr);
       const st = fileState.get(entry.path);
       for (const v of verdicts) {
         st.verdicts[v.rule] = v.verdict;
         st.totalDuration += v.duration_ms;
-        if (v.verdict === 'fail') { hardFailure = true; rejectCount++; }
-        // Spec §22: provider errors (missing key, unreachable daemon) must NOT block.
-        // They already appear as [error] on stderr via reportVerdicts. Never promote to exit 1.
+        const isFailureLike = v.verdict === 'fail' || v.verdict === 'error';
+        if (isFailureLike && v.severity === 'error') errorSeverityFailure = true;
+        // Track quick-mode failures separately: the [hint] block is only useful when
+        // the reviewer ran in quick mode (no inline reason). Thinking mode already
+        // prints the reason inline via report.mjs, so the hint would be redundant noise.
+        if (isFailureLike && v.severity === 'error' && v.mode === 'quick') anyQuickModeFail = true;
       }
-      // Decrement once per pair, regardless of verdict count: intent skip-no produces 0 verdicts
-      // but the pair was still consumed. Decrementing by verdicts.length would leave pendingPairs
-      // stuck above 0 and the file-summary would never be emitted.
+      // Decrement once per pair regardless of verdict count; keeps pendingPairs accurate for
+      // the file-summary flush below.
       st.pendingPairs -= 1;
       if (st.pendingPairs === 0 && historySession) {
         await historySession.append({
@@ -275,16 +248,11 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     if (historySession) await historySession.close();
   }
 
-  // UX: print a debug hint when precommit quick-mode has rejects
-  if (context === 'precommit' && cfg.review.mode === 'quick' && hardFailure) {
-    stderr.write(`\n[hint] One or more rules rejected. For file:line details, re-run with thinking mode:\n  node ${env.CLAUDE_PLUGIN_ROOT ?? 'plugin-root'}/scripts/bin/validate.mjs --files <path> --rule <rule-id> --mode thinking\n  Or ask the AutoReview agent "why did the commit fail?"\n`);
+  if (context === 'precommit' && anyQuickModeFail) {
+    stderr.write(`\n[hint] One or more rules rejected. To see file:line reasons:\n  - bump tiers.<name>.mode to "thinking" in .autoreview/config.yaml temporarily\n  - re-run: /autoreview:review --files <path> --rule <rule-id>\n  - or ask the AutoReview agent "why did the commit fail?"\n`);
   }
 
-  if (enforcement === 'soft' && hardFailure) {
-    stderr.write(`[info] review would have blocked under hard enforcement (${rejectCount} rule(s) rejected) — exit 0 per soft mode\n`);
-  }
-
-  if (enforcement === 'hard' && hardFailure) return 1;
+  if (errorSeverityFailure) return 1;
   return 0;
 }
 

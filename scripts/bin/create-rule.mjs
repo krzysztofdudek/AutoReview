@@ -6,7 +6,6 @@ import { readFile } from 'node:fs/promises';
 import { parseArgs } from '../lib/args.mjs';
 import { repoRoot } from '../lib/git-utils.mjs';
 import { loadConfig, DEFAULT_CONFIG } from '../lib/config-loader.mjs';
-import { getProvider } from '../lib/provider-client.mjs';
 import { parse as parseTrigger, evaluate as evalTrigger, shouldTreatAsNonMatchForContent } from '../lib/trigger-engine.mjs';
 import { renderRule, saveRule } from '../lib/rule-authoring.mjs';
 import { walk, isBinary, sizeOf, isMainModule } from '../lib/fs-utils.mjs';
@@ -29,7 +28,7 @@ export async function run(argv, ctx) {
 async function _run(argv, { cwd, env, stdout, stderr }) {
   const [sub, ...rest] = argv;
   if (!sub) {
-    stderr.write('[error] usage: create-rule <breadth|intent-test|test-drive|save> [options]\n');
+    stderr.write('[error] usage: create-rule <breadth|test-drive|save> [options]\n');
     return 1;
   }
   const { values } = parseArgs(rest, { multiple: ['files'] });
@@ -44,7 +43,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     try { ast = parseTrigger(values.expr); }
     catch (e) { stderr.write(`[error] parse: ${e.message}\n`); return 1; }
     const matches = [];
-    for await (const abs of walk({ root, cap: cfg.review.walk_file_cap })) {
+    for await (const abs of walk({ root, cap: 10000 })) {
       // Normalize to POSIX-style separators so triggers and JSON sample output
       // are consistent across Windows / POSIX.
       const rel = relative(root, abs).split(sep).join('/');
@@ -65,26 +64,6 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     return 0;
   }
 
-  if (sub === 'intent-test') {
-    if (!values.intent || !values.files) {
-      stderr.write('[error] intent-test requires --intent and --files\n'); return 1;
-    }
-    const provider = getProvider(cfg, {});
-    const results = [];
-    for (const f of values.files.slice(0, 10)) {
-      const abs = resolveCliPath(cwd, f);
-      const content = await readFile(abs, 'utf8').catch(() => null);
-      if (content === null) { results.push({ path: f, match: false, error: 'unreadable' }); continue; }
-      const prompt = `Does the file at ${f} implement this intent: ${values.intent}? Answer exactly 'yes' or 'no'.`;
-      const r = await provider.verify(prompt, { maxTokens: 8 });
-      const text = String(r.reason ?? '').toLowerCase();
-      const match = /\byes\b/.test(text);
-      results.push({ path: f, match, raw: r.reason });
-    }
-    stdout.write(JSON.stringify(results, null, 2) + '\n');
-    return 0;
-  }
-
   if (sub === 'test-drive') {
     if (!values['rule-body'] || !values.triggers || !values.files) {
       stderr.write('[error] test-drive requires --rule-body --triggers --files\n'); return 1;
@@ -93,7 +72,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     const ephemeral = {
       id: 'ephemeral',
       source: 'local', sourceName: null, path: values['rule-body'],
-      frontmatter: { name: 'Ephemeral', triggers: values.triggers, provider: null, model: null, intent: null },
+      frontmatter: { name: 'Ephemeral', triggers: values.triggers },
       body,
     };
     const results = [];
@@ -105,7 +84,7 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
       const res = await reviewFile({
         repoRoot: root, config: cfg, rules: [ephemeral],
         file: { path: f, content, binary },
-        diff: null, intentGate: null, historyEnabled: false,
+        diff: null, historyEnabled: false,
         stderr,
       });
       results.push({ path: f, verdicts: res.verdicts });
@@ -122,10 +101,10 @@ async function _run(argv, { cwd, env, stdout, stderr }) {
     const content = renderRule({
       name: values.name,
       triggers: values.triggers,
-      intent: values.intent,
+      tier: values.tier,
+      severity: values.severity,
+      type: values.type,
       description: values.description,
-      provider: values.provider,
-      model: values.model,
       body,
     });
     const abs = await saveRule({ repoRoot: root, relativePath: values.to, content });

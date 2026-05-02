@@ -1,9 +1,13 @@
 version: "0.1"
-provider:
-  active: ollama
-  ollama: { endpoint: "http://localhost:11434", model: "gemma4:e4b" }
-review:
-  evaluate: full
-  mode: quick
-enforcement:
-  validate: hard
+
+tiers:
+  default:
+    provider: ollama
+    model: gemma4:e4b
+    endpoint: http://localhost:11434
+    mode: quick
+
+remote_rules: []
+
+history:
+  log_to_file: true

@@ -72,3 +72,50 @@ test('context returns "no rules match" cleanly', async () => {
     assert.match(c.out(), /No rules match/);
   } finally { await cleanup(); }
 });
+
+test('context shows tier and severity in effective frontmatter', async () => {
+  const { dir, cleanup } = await mkRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/rules/api.md'),
+      `---\nname: "API"\ntriggers: 'path:"src/**"'\ntier: critical\nseverity: warning\ndescription: "api rules"\n---\nbody`);
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'src/foo.ts'), 'x');
+    const c = capture();
+    const code = await run(['src/foo.ts'], { cwd: dir, env: {}, ...c });
+    assert.equal(code, 0);
+    assert.match(c.out(), /tier: critical/);
+    assert.match(c.out(), /severity: warning/);
+  } finally { await cleanup(); }
+});
+
+test('context shows [manual] marker for type:manual rules', async () => {
+  const { dir, cleanup } = await mkRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/rules/manual.md'),
+      `---\nname: "Manual"\ntriggers: 'path:"src/**"'\ntype: manual\ndescription: "manual rule"\n---\nbody`);
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'src/foo.ts'), 'x');
+    const c = capture();
+    const code = await run(['src/foo.ts'], { cwd: dir, env: {}, ...c });
+    assert.equal(code, 0);
+    assert.match(c.out(), /\[manual\]/);
+  } finally { await cleanup(); }
+});
+
+test('context shows [invalid:] marker for rules with bad frontmatter values', async () => {
+  const { dir, cleanup } = await mkRepo();
+  try {
+    await mkdir(join(dir, '.autoreview/rules'), { recursive: true });
+    await writeFile(join(dir, '.autoreview/rules/bad.md'),
+      `---\nname: "Bad"\ntriggers: 'path:"src/**"'\ntier: bogus\ndescription: "bad tier"\n---\nbody`);
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'src/foo.ts'), 'x');
+    const c = capture();
+    const code = await run(['src/foo.ts'], { cwd: dir, env: {}, ...c });
+    assert.equal(code, 0);
+    assert.match(c.out(), /\[invalid:/);
+    assert.match(c.out(), /bogus/);
+  } finally { await cleanup(); }
+});
